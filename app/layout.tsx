@@ -1,4 +1,6 @@
-import { GeistSans, GeistMono } from "geist/font";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
+import "@/app/globals.css";
 import { Providers } from "./providers";
 
 export const metadata = {
@@ -22,7 +24,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body
-        className={[geistSans.variable, geistMono.variable].join(" ")}
+        className={[geistSans.variable, geistMono.variable, geistSans.className].join(" ")}
         style={{
           fontFamily: "var(--font-geist-sans), Inter, system-ui, sans-serif",
           fontVariantLigatures: "common-ligatures",

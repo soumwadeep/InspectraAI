@@ -129,7 +129,10 @@ class ApprovalRequest(Base):
     resolved_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     ticket: Mapped["MaintenanceTicket"] = relationship(back_populates="approvals")
-    requester: Mapped["User"] = relationship(back_populates="approval_requests")
+    requester: Mapped["User"] = relationship(
+        back_populates="approval_requests",
+        foreign_keys="ApprovalRequest.requester_id",
+    )
 
 
 class RepairEvidence(Base):

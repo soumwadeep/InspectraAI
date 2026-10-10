@@ -11,6 +11,18 @@ dist/
 .env.development.local
 .env.test.local
 .env.production.local
+.env
+backend/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database
+backend/inspectra.db
 
 # IDE
 .vscode/

@@ -55,7 +55,8 @@ class User(Base):
     organization: Mapped["Organization"] = relationship(back_populates="users")
     audit_logs: Mapped[list["AuditLog"] | None] = relationship(back_populates="user")
     approval_requests: Mapped[list["ApprovalRequest"] | None] = relationship(
-        back_populates="requester"
+        back_populates="requester",
+        foreign_keys="ApprovalRequest.requester_id",
     )
 
 

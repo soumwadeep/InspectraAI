@@ -25,18 +25,18 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useTheme } from "@/lib/theme-provider";
 
 const navItems = [
-  { name: "Overview", icon: Overview, href: "/dashboard" },
-  { name: "Live Inspection", icon: LiveInspection, href: "/dashboard/inspection/live" },
-  { name: "Upload & Analyze", icon: UploadAnalyze, href: "/dashboard/inspection/upload" },
-  { name: "Equipment", icon: Equipment, href: "/dashboard/equipment" },
-  { name: "Inspection History", icon: History, href: "/dashboard/history" },
-  { name: "Findings", icon: Findings, href: "/dashboard/findings" },
-  { name: "Maintenance Tickets", icon: Maintenance, href: "/dashboard/tickets" },
-  { name: "Agent Activity", icon: AgentActivity, href: "/dashboard/agent" },
-  { name: "Analytics", icon: Analytics, href: "/dashboard/analytics" },
-  { name: "Benchmarks", icon: Benchmarks, href: "/dashboard/benchmarks" },
-  { name: "Reports", icon: Reports, href: "/dashboard/reports" },
-  { name: "Settings", icon: Settings, href: "/dashboard/settings" },
+  { name: "Overview", icon: <Overview className="h-5 w-5" />, href: "/dashboard" },
+  { name: "Live Inspection", icon: <LiveInspection className="h-5 w-5" />, href: "/dashboard/inspection/live" },
+  { name: "Upload & Analyze", icon: <UploadAnalyze className="h-5 w-5" />, href: "/dashboard/inspection/upload" },
+  { name: "Equipment", icon: <Equipment className="h-5 w-5" />, href: "/dashboard/equipment" },
+  { name: "Inspection History", icon: <History className="h-5 w-5" />, href: "/dashboard/history" },
+  { name: "Findings", icon: <Findings className="h-5 w-5" />, href: "/dashboard/findings" },
+  { name: "Maintenance Tickets", icon: <Maintenance className="h-5 w-5" />, href: "/dashboard/tickets" },
+  { name: "Agent Activity", icon: <AgentActivity className="h-5 w-5" />, href: "/dashboard/agent" },
+  { name: "Analytics", icon: <Analytics className="h-5 w-5" />, href: "/dashboard/analytics" },
+  { name: "Benchmarks", icon: <Benchmarks className="h-5 w-5" />, href: "/dashboard/benchmarks" },
+  { name: "Reports", icon: <Reports className="h-5 w-5" />, href: "/dashboard/reports" },
+  { name: "Settings", icon: <Settings className="h-5 w-5" />, href: "/dashboard/settings" },
 ];
 
 export const Sidebar = () => {
@@ -130,7 +130,7 @@ export const Sidebar = () => {
                     }}
                   />
                 )}
-                <span className="relative z-10">{item.icon({ className: "h-5 w-5" })}</span>
+                <span className="relative z-10">{item.icon}</span>
                 <AnimatePresence>
                   {!collapsed && (
                     <motion.span
@@ -146,7 +146,7 @@ export const Sidebar = () => {
               </motion.div>
             </Link>
           );
-        }}
+        })}
       </nav>
 
       <div className="border-t border-border p-3">
