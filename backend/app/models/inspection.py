@@ -7,7 +7,6 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum,
     ForeignKey,
     Integer,
     JSON,
@@ -17,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base, uuid_gen
+from app.database import Base, uuid_gen, value_enum
 
 
 class InspectionStatusEnum(str, enum.Enum):
@@ -47,15 +46,20 @@ class Inspection(Base):
         String(36), ForeignKey("users.id"), nullable=False
     )
     status: Mapped[InspectionStatusEnum] = mapped_column(
-        Enum(InspectionStatusEnum),
+        value_enum(InspectionStatusEnum),
         default=InspectionStatusEnum.pending,
         nullable=False,
     )
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ended_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    # agent_runs.inspection_id and inspections.agent_run_id form a cycle. SQLite
+    # tolerates it; Postgres would raise UndefinedTable because agent_runs sorts
+    # first, so this side must be added with ALTER TABLE after both exist.
     agent_run_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("agent_runs.id"), nullable=True
+        String(36),
+        ForeignKey("agent_runs.id", use_alter=True, name="fk_inspections_agent_run_id"),
+        nullable=True,
     )
 
     equipment: Mapped["Equipment"] = relationship(back_populates="inspections")
@@ -91,7 +95,7 @@ class InspectionInput(Base):
     width: Mapped[int] = mapped_column(Integer, nullable=True)
     height: Mapped[int] = mapped_column(Integer, nullable=True)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=True)
-    metadata_json: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
+    metadata_json: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )
@@ -107,7 +111,7 @@ class InspectionJob(Base):
         String(36), ForeignKey("inspections.id"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
-    result_json: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
+    result_json: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
@@ -158,11 +162,6 @@ class VisionObservation(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=True)
     category: Mapped[str] = mapped_column(String(100), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=True)
-    details_json: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
+    details_json: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
     evidence_image_path: Mapped[str] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-
-class AgentRunModelPlaceholder:
-    """Placeholder so relationship to AgentRun can be declared."""
-    pass

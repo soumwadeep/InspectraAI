@@ -77,6 +77,9 @@ async def create_ticket(
         due_date=data.due_date,
     )
     db.add(ticket)
+    # The session is created with autoflush=False, so ticket.id is still None
+    # until this flush — and both rows below have NOT NULL ticket_id.
+    db.flush()
 
     # Create approval request
     approval = ApprovalRequest(

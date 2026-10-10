@@ -5,10 +5,10 @@ import enum
 from datetime import datetime
 from typing import Any, ClassVar
 
-from sqlalchemy import DateTime, Enum, ForeignKey, JSON, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Float, JSON, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base, uuid_gen
+from app.database import Base, uuid_gen, value_enum
 
 
 class AgentRunStatus(str, enum.Enum):
@@ -29,14 +29,19 @@ class AgentRun(Base):
         String(36), ForeignKey("organizations.id"), nullable=False
     )
     status: Mapped[AgentRunStatus] = mapped_column(
-        Enum(AgentRunStatus), default=AgentRunStatus.running, nullable=False
+        value_enum(AgentRunStatus), default=AgentRunStatus.running, nullable=False
     )
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ended_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     iterations: Mapped[int] = mapped_column(Integer, default=0)
-    budget_used: Mapped[float] = mapped_column(Integer, default=0)  # tool budget counter
+    # Tool costs are fractional (2.5, 3.0 per step), so Integer silently
+    # truncates the budget the moment it is read back.
+    budget_used: Mapped[float] = mapped_column(Float, default=0.0)
     final_action: Mapped[str] = mapped_column(String(512), nullable=True)
-    final_outcome: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
+    final_outcome: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
+    # Serialized WorkflowContext, written when a run pauses so it can be
+    # resumed from real state instead of being marked complete.
+    context_json: Mapped[str] = mapped_column(JSON, nullable=True)
 
     steps: Mapped[list["AgentStep"]] = relationship(
         back_populates="run",
@@ -60,7 +65,7 @@ class AgentStep(Base):
     action: ClassVar[str]  # Will be stored as the step's action type
     action_type: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    arguments: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
+    arguments: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
     result_summary: Mapped[str] = mapped_column(Text, nullable=True)
     evidence_ref: Mapped[str] = mapped_column(String(512), nullable=True)
     decision: Mapped[str] = mapped_column(Text, nullable=True)
@@ -84,9 +89,9 @@ class AgentToolCall(Base):
         String(36), ForeignKey("agent_steps.id"), nullable=True
     )
     tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    arguments: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
+    arguments: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
     result_summary: Mapped[str] = mapped_column(Text, nullable=True)
-    result_json: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
+    result_json: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
@@ -104,7 +109,7 @@ class BenchmarkRun(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
-    config_json: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
-    results_json: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
+    config_json: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
+    results_json: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)

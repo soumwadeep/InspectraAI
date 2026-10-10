@@ -133,7 +133,8 @@ async def archive_equipment(
         raise HTTPException(status_code=404, detail="Equipment not found")
     eq.is_archived = True
     db.commit()
-    return {"message": "Equipment archived"}
+    # 204 responses must carry no body; returning one here made clients see a
+    # malformed response even though the archive succeeded.
 
 
 @router.post("/{equipment_id}/reference-image", status_code=201)
@@ -195,15 +196,25 @@ async def get_equipment_status(
     if not eq:
         raise HTTPException(status_code=404, detail="Equipment not found")
 
-    from app.models.finding import Finding
+    from app.models.finding import Finding, FindingStatusEnum
+    from app.models.inspection import Inspection
 
     open_findings = (
         db.query(Finding)
         .filter(
             Finding.equipment_id == eq.id,
-            Finding.resolution_state.in_(["pending-review", "in-progress"]),
+            Finding.resolution_state.in_(
+                [FindingStatusEnum.pending_review, FindingStatusEnum.in_progress]
+            ),
         )
         .count()
+    )
+
+    last_inspection = (
+        db.query(Inspection)
+        .filter(Inspection.equipment_id == eq.id)
+        .order_by(Inspection.started_at.desc())
+        .first()
     )
 
     return {
@@ -211,6 +222,13 @@ async def get_equipment_status(
         "name": eq.name,
         "status": eq.status.value,
         "open_findings": open_findings,
-        "last_inspection": None,
+        "last_inspection": {
+            "id": last_inspection.id,
+            "status": last_inspection.status.value,
+            "started_at": last_inspection.started_at.isoformat(),
+            "duration_ms": last_inspection.duration_ms,
+        }
+        if last_inspection
+        else None,
         "next_inspection": eq.inspection_schedule,
     }

@@ -4,10 +4,10 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base, uuid_gen
+from app.database import Base, uuid_gen, value_enum
 
 
 class RoleEnum(str, enum.Enum):
@@ -41,7 +41,7 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[RoleEnum] = mapped_column(
-        Enum(RoleEnum), nullable=False, default=RoleEnum.inspector
+        value_enum(RoleEnum), nullable=False, default=RoleEnum.inspector
     )
     organization_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("organizations.id"), nullable=False
@@ -71,7 +71,7 @@ class OrganizationMember(Base):
         String(36), ForeignKey("users.id"), nullable=False
     )
     role: Mapped[RoleEnum] = mapped_column(
-        Enum(RoleEnum), nullable=False, default=RoleEnum.viewer
+        value_enum(RoleEnum), nullable=False, default=RoleEnum.viewer
     )
     joined_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

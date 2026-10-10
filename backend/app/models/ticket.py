@@ -6,7 +6,6 @@ from datetime import datetime
 
 from sqlalchemy import (
     DateTime,
-    Enum,
     ForeignKey,
     Integer,
     JSON,
@@ -15,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base, uuid_gen
+from app.database import Base, uuid_gen, value_enum
 
 
 class TicketPriorityEnum(str, enum.Enum):
@@ -50,14 +49,14 @@ class MaintenanceTicket(Base):
         String(36), ForeignKey("organizations.id"), nullable=False
     )
     priority: Mapped[TicketPriorityEnum] = mapped_column(
-        Enum(TicketPriorityEnum), nullable=False
+        value_enum(TicketPriorityEnum), nullable=False
     )
     description: Mapped[str] = mapped_column(Text, nullable=False)
     assigned_operator_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id"), nullable=True
     )
     status: Mapped[TicketStatusEnum] = mapped_column(
-        Enum(TicketStatusEnum), default=TicketStatusEnum.draft, nullable=False
+        value_enum(TicketStatusEnum), default=TicketStatusEnum.draft, nullable=False
     )
     due_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     completion_notes: Mapped[str] = mapped_column(Text, nullable=True)
@@ -94,7 +93,7 @@ class MaintenanceTicketEvent(Base):
         String(36), ForeignKey("maintenance_tickets.id"), nullable=False
     )
     status: Mapped[TicketStatusEnum] = mapped_column(
-        Enum(TicketStatusEnum), nullable=False
+        value_enum(TicketStatusEnum), nullable=False
     )
     actor_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id"), nullable=True
@@ -160,7 +159,7 @@ class RepairVerification(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False
     )  # passed|failed|pending
-    details_json: Mapped[str] = mapped_column(JSON, default="{}", nullable=False)
+    details_json: Mapped[str] = mapped_column(JSON, default=dict, nullable=False)
     verifier_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id"), nullable=True
     )

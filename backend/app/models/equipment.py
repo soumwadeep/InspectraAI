@@ -4,10 +4,10 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base, uuid_gen
+from app.database import Base, uuid_gen, value_enum
 
 
 class EquipmentStatusEnum(str, enum.Enum):
@@ -38,7 +38,7 @@ class Equipment(Base):
         String(36), ForeignKey("users.id"), nullable=True
     )
     status: Mapped[EquipmentStatusEnum] = mapped_column(
-        Enum(EquipmentStatusEnum),
+        value_enum(EquipmentStatusEnum),
         default=EquipmentStatusEnum.operational,
         nullable=False,
     )

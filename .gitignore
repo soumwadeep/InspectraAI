@@ -20,9 +20,15 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+.venv/
+venv/
 
 # Database
 backend/inspectra.db
+
+# Uploaded evidence and inspection imagery — must never be committed, and
+# alembic's version table lives in the sqlite file above, not here.
+backend/storage/
 
 # IDE
 .vscode/

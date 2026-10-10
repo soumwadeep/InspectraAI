@@ -19,6 +19,11 @@ class ChangedRegion:
     mean_intensity: float
     confidence: float
     description: str = ""
+    # Read by vision/engine.py and vision/evidence.py. It was absent from this
+    # dataclass, so any inspection that actually found a change raised
+    # AttributeError instead of returning it.
+    category: str = "visual_change"
+    details_json: dict = field(default_factory=dict)
 
 
 @dataclass

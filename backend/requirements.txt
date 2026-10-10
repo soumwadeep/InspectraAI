@@ -7,9 +7,13 @@ pydantic==2.10.4
 pydantic-settings==2.6.1
 python-multipart==0.0.32
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+# passlib 1.7.4 probes bcrypt.__about__, which bcrypt >= 4.1 removed, so its
+# backend detection raises and every hash attempt fails.
+bcrypt>=4.2,<6
 email-validator==2.3.0
 redis==5.2.1
 pillow==11.0.0
 numpy>=2.0.2
-opencv-python-headless>=5.0.0
+# Unpinned, `>=` resolves to whichever 5.x pre-release exists on the index and
+# fails to install on machines without one. Pinned to the verified working build.
+opencv-python-headless==5.0.0.93

@@ -4,10 +4,10 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text
+from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base, uuid_gen
+from app.database import Base, uuid_gen, value_enum
 
 
 class SeverityEnum(str, enum.Enum):
@@ -49,13 +49,13 @@ class Finding(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     detection_method: Mapped[str] = mapped_column(String(255), nullable=False)
     confidence: Mapped[float] = mapped_column(JSON, nullable=True)
-    severity: Mapped[SeverityEnum] = mapped_column(Enum(SeverityEnum), nullable=False)
+    severity: Mapped[SeverityEnum] = mapped_column(value_enum(SeverityEnum), nullable=False)
     verification_status: Mapped[VerificationStatusEnum] = mapped_column(
-        Enum(VerificationStatusEnum),
+        value_enum(VerificationStatusEnum),
         default=VerificationStatusEnum.unverified,
     )
     resolution_state: Mapped[FindingStatusEnum] = mapped_column(
-        Enum(FindingStatusEnum), default=FindingStatusEnum.pending_review
+        value_enum(FindingStatusEnum), default=FindingStatusEnum.pending_review
     )
     assigned_reviewer_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id"), nullable=True

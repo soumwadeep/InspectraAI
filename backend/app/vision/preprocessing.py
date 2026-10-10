@@ -44,9 +44,16 @@ class PreprocessingResult:
 
 
 def decode_image(raw_bytes: bytes) -> np.ndarray:
-    """Decode an image from raw bytes using OpenCV."""
+    """Decode an image from raw bytes to a 3-channel BGR array.
+
+    IMREAD_UNCHANGED was used before, which returns 4 channels for any PNG with
+    an alpha channel — a plain phone screenshot — and the later
+    ``cvtColor(BGR2GRAY)``/``BGR2HSV`` calls then raised and surfaced as a 500.
+    """
+    if not raw_bytes:
+        raise ValueError("Empty upload — no image bytes to decode")
     arr = np.frombuffer(raw_bytes, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError("Failed to decode image — possibly corrupt or unsupported format")
     return img

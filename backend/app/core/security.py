@@ -4,21 +4,31 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import HTTPException, status
 
 from app.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt silently ignores bytes past 72, so a longer secret must be rejected
+# rather than truncated — otherwise a password could match a different one.
+_BCRYPT_MAX_BYTES = 72
+_BCRYPT_ROUNDS = 12
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    secret = password.encode("utf-8")
+    if len(secret) > _BCRYPT_MAX_BYTES:
+        raise ValueError(f"Password must not exceed {_BCRYPT_MAX_BYTES} bytes")
+    return bcrypt.hashpw(secret, bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except ValueError:
+        # Malformed or truncated hash in storage: treat as no match, never raise.
+        return False
 
 
 def create_access_token(

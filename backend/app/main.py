@@ -14,11 +14,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.database import Base, engine
+from app.database import engine
+from sqlalchemy import text
 from pathlib import Path
 
-# Create all database tables on startup
-Base.metadata.create_all(bind=engine)
+# No DDL at import time. Tables come from `python3 -m scripts.bootstrap_db`,
+# which runs the Alembic migrations in backend/alembic.
 
 app = FastAPI(
     title=settings.app_name,
@@ -34,12 +35,11 @@ app = FastAPI(
 
 
 # ---- CORS ----
+# "*" and credentials cannot be combined: browsers reject the response, and
+# allowing both would let any origin issue authenticated requests.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.debug else [
-        "http://localhost:3000",
-        "https://inspectra.ai",
-    ],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -63,6 +63,19 @@ async def add_process_time_header(request: Request, call_next):
 
 
 # ---- Health check ----
+def _schema_revision() -> str:
+    """Which migration the database is actually on, or why it is not usable."""
+    try:
+        with engine.connect() as conn:
+            value = conn.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar()
+        return str(value) if value else "no revision row"
+    except Exception:
+        # No alembic_version table: bootstrap_db has never been run here.
+        return "migrations not applied"
+
+
 @app.get("/health")
 async def health_check():
     """Simple health endpoint for load balancers and monitoring."""
@@ -75,6 +88,7 @@ async def health_check():
         "version": "1.0.0",
         "opencv": cv2.__version__,
         "database": "connected" if db_ok else "disconnected",
+        "schema_revision": _schema_revision(),
     }
 
 
