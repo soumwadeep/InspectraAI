@@ -1,4 +1,5 @@
 import { GeistSans, GeistMono } from "geist/font";
+import { Providers } from "./providers";
 
 export const metadata = {
   title: "Inspectra AI — Autonomous Visual Inspection Platform",
@@ -27,7 +28,7 @@ export default function RootLayout({
           fontVariantLigatures: "common-ligatures",
         }}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
