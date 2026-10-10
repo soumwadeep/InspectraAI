@@ -6,15 +6,58 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Eye, EyeOff, Lock, Mail, User, Shield } from "lucide-react";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api";
+import { useToast } from "@/components/ui/use-toast";
 
 export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const router = useRouter();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { register } = useAuth();
+  const { toast } = useToast();
 
-  const handleRegister = () => {
-    router.push("/dashboard");
+  const handleRegister = async () => {
+    if (!firstName || !lastName || !email || !organization || !password) {
+      toast({
+        title: "Missing fields",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (password !== confirmPassword) {
+      toast({
+        title: "Passwords don't match",
+        description: "Please ensure your passwords match.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await register({
+        email,
+        password,
+        name: `${firstName} ${lastName}`,
+        organization_name: organization,
+      });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Registration failed. Please try again.";
+      toast({
+        title: "Registration failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -62,14 +105,27 @@ export default function RegisterPage() {
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary-text" />
-                  <Input type="text" placeholder="Alex" className="pl-10" required />
+                  <Input
+                    type="text"
+                    placeholder="Alex"
+                    className="pl-10"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                  />
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-medium text-secondary-text">
                   Last Name
                 </label>
-                <Input type="text" placeholder="Chen" required />
+                <Input
+                  type="text"
+                  placeholder="Chen"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                />
               </div>
             </div>
 
@@ -83,6 +139,8 @@ export default function RegisterPage() {
                   type="email"
                   placeholder="you@company.com"
                   className="pl-10"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                 />
               </div>
@@ -94,7 +152,14 @@ export default function RegisterPage() {
               </label>
               <div className="relative">
                 <Shield className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary-text" />
-                <Input type="text" placeholder="Acme Industries" className="pl-10" required />
+                <Input
+                  type="text"
+                  placeholder="Acme Industries"
+                  className="pl-10"
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
+                  required
+                />
               </div>
             </div>
 
@@ -108,6 +173,8 @@ export default function RegisterPage() {
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
                   className="pl-10"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                 />
                 <button
@@ -134,6 +201,8 @@ export default function RegisterPage() {
                   type={showConfirm ? "text" : "password"}
                   placeholder="••••••••"
                   className="pl-10"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                 />
                 <button
@@ -150,7 +219,13 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" size="lg">
+            <Button
+              type="submit"
+              className="w-full"
+              size="lg"
+              disabled={isSubmitting}
+              loading={isSubmitting}
+            >
               Create Account
             </Button>
           </form>
