@@ -19,6 +19,10 @@ import {
 } from "@/components/icons";
 import { useEquipment } from "@/lib/hooks";
 import {
+  VisionViewport,
+  ViewportBox,
+} from "@/components/vision/vision-viewport";
+import {
   api,
   storageUrl,
   VisionInspectResult,
@@ -34,6 +38,9 @@ interface RunResult {
   inspection: VisionInspectResult;
   elapsedMs: number;
   inspectionId: string;
+  /** Object URLs for the exact bytes that were analysed. Revoked on reset. */
+  captureUrl: string;
+  referenceUrl: string;
 }
 
 const PHASES: Array<{ key: Phase; label: string; detail: string }> = [
@@ -131,6 +138,8 @@ export default function UploadInspectPage() {
         inspection: inspected,
         elapsedMs,
         inspectionId: inspection.id,
+        captureUrl: URL.createObjectURL(currentFile),
+        referenceUrl: URL.createObjectURL(reference),
       });
       setPhase("done");
     } catch (err) {
@@ -140,6 +149,10 @@ export default function UploadInspectPage() {
   }
 
   function reset() {
+    if (result) {
+      URL.revokeObjectURL(result.captureUrl);
+      URL.revokeObjectURL(result.referenceUrl);
+    }
     setPhase("idle");
     setResult(null);
     setError(null);
@@ -423,6 +436,8 @@ function AnalysisResults({ result }: { result: RunResult }) {
         </CardContent>
       </Card>
 
+      <EvidenceStage result={result} />
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -564,8 +579,123 @@ function AnalysisResults({ result }: { result: RunResult }) {
   );
 }
 
-function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
+/**
+ * The evidence stage: the analysed capture with its real bounding boxes, the
+ * computed difference overlay, and the reference frame the regions were measured
+ * in. Boxes are stored as fractions of the reference, so the same coordinates are
+ * correct over either image — that is what makes the two views switchable without
+ * any rescaling here.
+ */
+function EvidenceStage({ result }: { result: RunResult }) {
+  const [subject, setSubject] = useState<"capture" | "reference">("capture");
+  const [layers, setLayers] = useState({ boxes: true, diff: false, grid: true });
+
+  const viewportBoxes: ViewportBox[] = (result.inspection.anomalies ?? []).map((anomaly) => ({
+    box: [anomaly.bbox.x, anomaly.bbox.y, anomaly.bbox.width, anomaly.bbox.height],
+    label: anomaly.category,
+    severity: anomaly.severity,
+    confidence: anomaly.confidence,
+  }));
+
+  const diffEntry = Object.values(result.inspection.evidence?.diff ?? {})[0];
+  const diffUrl = diffEntry ? `data:image/png;base64,${diffEntry}` : null;
+
+  const toggle = (key: keyof typeof layers) =>
+    setLayers((current) => ({ ...current, [key]: !current[key] }));
+
+  const chips: Array<{ key: keyof typeof layers; label: string; enabled: boolean; disabled?: boolean }> = [
+    { key: "boxes", label: `Regions (${viewportBoxes.length})`, enabled: layers.boxes },
+    {
+      key: "diff",
+      label: "Difference overlay",
+      enabled: layers.diff,
+      disabled: !diffUrl,
+    },
+    { key: "grid", label: "Instrument grid", enabled: layers.grid },
+  ];
+
   return (
+    <Card>
+      <CardHeader className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-primary-text">Evidence</CardTitle>
+            <CardDescription>
+              Scroll to zoom, drag to pan, arrow keys to move, 0 to reset.
+            </CardDescription>
+          </div>
+          <div className="flex rounded-lg border border-border bg-surface/50 p-0.5">
+            {(["capture", "reference"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setSubject(option)}
+                aria-pressed={subject === option}
+                className={cn(
+                  "rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors",
+                  subject === option
+                    ? "bg-primary/15 text-primary"
+                    : "text-secondary-text hover:text-primary-text",
+                )}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {chips.map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              onClick={() => toggle(chip.key)}
+              disabled={chip.disabled}
+              aria-pressed={chip.enabled}
+              title={
+                chip.disabled
+                  ? "No difference mask was returned by this run"
+                  : undefined
+              }
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs transition-colors",
+                chip.enabled
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border bg-surface/40 text-secondary-text hover:border-border-hover",
+                chip.disabled && "cursor-not-allowed opacity-40 hover:border-border",
+              )}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-3">
+        <VisionViewport
+          src={subject === "capture" ? result.captureUrl : result.referenceUrl}
+          alt={
+            subject === "capture"
+              ? "Inspection capture with detected regions"
+              : "Equipment reference image with the same region coordinates"
+          }
+          boxes={viewportBoxes}
+          showBoxes={layers.boxes}
+          showGrid={layers.grid}
+          overlaySrc={layers.diff ? diffUrl : null}
+        />
+
+        <p className="text-xs text-secondary-text">
+          {subject === "capture"
+            ? "Regions are drawn from the pipeline response for this run."
+            : "The reference frame, with the same relative coordinates projected onto it."}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {  return (
     <div className="rounded-lg bg-surface/30 p-3">
       <p className="text-[11px] uppercase tracking-wide text-secondary-text">{label}</p>
       <p className="mt-1 truncate font-mono text-sm text-primary-text tabular-nums" title={hint}>

@@ -16,10 +16,11 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const reduce = useReducedMotion();
 
-  const motionProps = reduce
-    ? { key: pathname }
+  // `key` is passed as its own attribute, never spread from an object: React 19
+  // rejects a key inside a spread props object and logs an error on every render.
+  const animation = reduce
+    ? {}
     : {
-        key: pathname,
         initial: routeTransition.initial,
         animate: routeTransition.animate,
         exit: routeTransition.exit,
@@ -27,7 +28,7 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
 
   return (
     <AnimatePresence mode="wait">
-      <motion.div {...motionProps} className="min-h-full">
+      <motion.div key={pathname} {...animation} className="min-h-full">
         {children}
       </motion.div>
     </AnimatePresence>
