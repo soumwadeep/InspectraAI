@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
 
-@router.get("/", response_model=list[MaintenanceTicketRead])
+@router.get("", response_model=list[MaintenanceTicketRead])
 async def list_tickets(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -42,7 +42,7 @@ async def list_tickets(
     return query.offset(skip).limit(limit).all()
 
 
-@router.post("/", response_model=MaintenanceTicketRead, status_code=201)
+@router.post("", response_model=MaintenanceTicketRead, status_code=201)
 async def create_ticket(
     data: MaintenanceTicketCreate,
     db: Session = Depends(get_db),
@@ -129,12 +129,27 @@ async def get_ticket(
         RepairVerification.ticket_id == ticket.id
     ).all()
 
-    from app.schemas.ticket import RepairVerificationRead
+    from app.schemas.ticket import (
+        ApprovalRequestRead,
+        RepairVerificationRead,
+        TicketEventRead,
+    )
+
+    # `__dict__` on an ORM row carries `_sa_instance_state`, which pydantic refuses
+    # to serialise, so this endpoint 500'd for any ticket with an event or approval.
     return {
         "ticket": MaintenanceTicketRead.model_validate(ticket),
-        "events": [e.__dict__ for e in events],
-        "approvals": [a.__dict__ for a in approvals],
-        "verifications": [RepairVerificationRead.model_validate(v).__dict__ for v in verifications],
+        "events": [
+            TicketEventRead.model_validate(e).model_dump(mode="json") for e in events
+        ],
+        "approvals": [
+            ApprovalRequestRead.model_validate(a).model_dump(mode="json")
+            for a in approvals
+        ],
+        "verifications": [
+            RepairVerificationRead.model_validate(v).model_dump(mode="json")
+            for v in verifications
+        ],
     }
 
 

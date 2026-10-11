@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 router = APIRouter(prefix="/api/equipment", tags=["equipment"])
 
 
-@router.get("/", response_model=list[EquipmentRead])
+@router.get("", response_model=list[EquipmentRead])
 async def list_equipment(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -48,7 +48,7 @@ async def list_equipment(
     return query.offset(skip).limit(limit).all()
 
 
-@router.post("/", response_model=EquipmentRead, status_code=201)
+@router.post("", response_model=EquipmentRead, status_code=201)
 async def create_equipment(
     data: EquipmentCreate,
     db: Session = Depends(get_db),

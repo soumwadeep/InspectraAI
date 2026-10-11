@@ -1,7 +1,7 @@
 """Evaluation metrics: precision/recall/F1, IoU, mAP for benchmarking."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
@@ -18,6 +18,14 @@ class DetectionMetrics:
     f1_score: float = 0.0
     false_positive_rate: float = 0.0
     iou_scores: list[float] = None  # type: ignore
+    # Among the predictions that matched a ground-truth box geometrically, how many
+    # also named the right defect. Separated from detection score so a wrong label
+    # does not look like a missed defect.
+    category_correct: int = 0
+    category_total: int = 0
+    # Measured context for the pair (SSIM, mean diff, the raw prediction list) so a
+    # reported score can be audited rather than taken on trust.
+    details: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -30,6 +38,13 @@ class DetectionMetrics:
             "false_positive_rate": round(self.false_positive_rate, 4),
             "mean_iou": round(float(np.mean(self.iou_scores)) if self.iou_scores else 0.0, 4) if self.iou_scores else 0.0,
             "iou_scores": self.iou_scores if self.iou_scores else [],
+            "category_correct": self.category_correct,
+            "category_total": self.category_total,
+            "category_accuracy": (
+                round(self.category_correct / self.category_total, 4)
+                if self.category_total else None
+            ),
+            "details": self.details,
         }
 
 
@@ -77,9 +92,16 @@ def calculate_precision_recall(
     predictions: list[PredictionBox],
     ground_truths: list[GroundTruthBox],
     iou_threshold: float = 0.5,
+    require_category_match: bool = True,
 ) -> DetectionMetrics:
     """
     Calculate precision, recall, F1, and false positive rate for object detection.
+
+    `require_category_match=False` scores localisation only and reports the label
+    score through `category_correct`/`category_total`. With the default, a
+    ground truth labelled "anomaly" can never match a prediction labelled
+    "discoloration", so every detection counted as a false positive — which is what
+    `VisionEngine.evaluate_benchmark` did until it passed the flag.
     """
     metrics = DetectionMetrics(iou_scores=[])
     matched_gt: set[int] = set()
@@ -96,7 +118,7 @@ def calculate_precision_recall(
         for gt_idx, gt in enumerate(ground_truths):
             if gt_idx in matched_gt:
                 continue
-            if pred.category != gt.category:
+            if require_category_match and pred.category != gt.category:
                 continue
 
             current_iou = iou(
@@ -112,6 +134,10 @@ def calculate_precision_recall(
             matched_gt.add(best_gt_idx)
             matched_pred.add(sorted_preds.index(pred))
             metrics.iou_scores.append(best_iou)
+            if not require_category_match:
+                metrics.category_total += 1
+                if pred.category == ground_truths[best_gt_idx].category:
+                    metrics.category_correct += 1
         else:
             metrics.false_positives += 1
             fp_predictions.append(pred)

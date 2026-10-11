@@ -12,7 +12,7 @@ import json
 router = APIRouter(prefix="/api/benchmarks", tags=["benchmarks"])
 
 
-@router.get("/", response_model=list[BenchmarkRunRead])
+@router.get("", response_model=list[BenchmarkRunRead])
 async def list_benchmarks(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -32,37 +32,24 @@ async def run_benchmark(
     current_user=Depends(get_current_user),
     org_id: str = Depends(get_current_organization_id),
 ):
-    """Run a new benchmark with the given configuration."""
+    """Score the vision pipeline over a generated labelled corpus.
+
+    This used to import four vision classes, call none of them, and store
+    `{"quality_test": "passed", ...}`. The numbers now come from real pixels:
+    see `app/vision/benchmark.run_benchmark`.
+    """
     import time
-    start = time.time()
 
-    from app.vision.engine import VisionEngine
+    from app.vision.benchmark import run_benchmark as measure
 
-    engine = VisionEngine()
-    results = {}
-
-    # Run quality analysis benchmarks
-    if config.config.get("test_quality", True):
-        from app.vision.quality import QualityAnalyzer
-        analyzer = QualityAnalyzer()
-        results["quality_test"] = "passed"
-
-    # Run alignment benchmarks
-    if config.config.get("test_alignment", True):
-        from app.vision.alignment import AlignmentConfig
-        results["alignment_test"] = "passed"
-
-    # Run change detection benchmarks
-    if config.config.get("test_detection", True):
-        from app.vision.change_detection import ChangeDetectionConfig
-        results["detection_test"] = "passed"
-
-    # Run metrics benchmarks
-    if config.config.get("test_metrics", True):
-        from app.vision.metrics import calculate_precision_recall
-        results["metrics_test"] = "passed"
-
-    duration_ms = int((time.time() - start) * 1000)
+    settings = config.config or {}
+    started = time.time()
+    results = measure(
+        pair_count=int(settings.get("pairs", 12)),
+        seed=int(settings.get("seed", 7)),
+        iou_threshold=float(settings.get("iou_threshold", 0.3)),
+    )
+    results["corpus"]["wall_ms"] = int((time.time() - started) * 1000)
 
     run = BenchmarkRun(
         organization_id=org_id,
@@ -70,7 +57,7 @@ async def run_benchmark(
         description=config.description,
         config_json=config.config,
         results_json=results,
-        duration_ms=duration_ms,
+        duration_ms=int((time.time() - started) * 1000),
     )
     db.add(run)
     db.commit()

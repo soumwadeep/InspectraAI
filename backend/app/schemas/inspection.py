@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class QualityMetricsSchema(BaseModel):
@@ -53,6 +53,18 @@ class InspectionRead(BaseModel):
     findings: list[str] = []
 
     model_config = {"from_attributes": True}
+
+    @field_validator("findings", mode="before")
+    @classmethod
+    def _finding_ids(cls, value: Any) -> Any:
+        """`Inspection.findings` is a relationship of Finding objects.
+
+        The wire contract is a list of ids, so reading an inspection 500'd on the
+        first run that actually created a finding.
+        """
+        if isinstance(value, (list, tuple)):
+            return [getattr(item, "id", item) for item in value]
+        return value
 
 
 class InspectionStartRequest(BaseModel):

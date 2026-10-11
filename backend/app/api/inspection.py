@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
+from app.agent.state_machine import AgentState
 from app.config import settings
 from app.core.dependencies import get_current_user, get_current_organization_id, get_db
 from app.core.storage import MAX_FILE_SIZE_BYTES, StorageService
@@ -16,6 +18,7 @@ from app.models.inspection import (
     InspectionJob,
     InspectionStatusEnum,
 )
+from app.schemas.finding import FindingRead
 from app.schemas.inspection import (
     InspectionCreate,
     InspectionRead,
@@ -31,7 +34,7 @@ from sqlalchemy.orm import Session
 router = APIRouter(prefix="/api/inspections", tags=["inspections"])
 
 
-@router.get("/", response_model=list[InspectionRead])
+@router.get("", response_model=list[InspectionRead])
 async def list_inspections(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -47,7 +50,7 @@ async def list_inspections(
     return query.offset(skip).limit(limit).all()
 
 
-@router.post("/", response_model=InspectionRead, status_code=201)
+@router.post("", response_model=InspectionRead, status_code=201)
 async def create_inspection(
     data: InspectionCreate,
     db: Session = Depends(get_db),
@@ -169,13 +172,6 @@ async def run_inspection(
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
 
-    # Get inspection inputs
-    inputs = db.query(InspectionInput).filter(
-        InspectionInput.inspection_id == inspection_id
-    ).all()
-    if not inputs:
-        raise HTTPException(status_code=400, detail="No input images uploaded for this inspection")
-
     # Get reference image
     from app.models.equipment import EquipmentReferenceImage
     ref_img = db.query(EquipmentReferenceImage).filter(
@@ -193,6 +189,17 @@ async def run_inspection(
     tools = VisionTools(engine)
     agent = VisionAgent(db, tools)
 
+    # The most recent capture wins: after a retake request the rejected image must
+    # not be the one measured again.
+    inputs = (
+        db.query(InspectionInput)
+        .filter(InspectionInput.inspection_id == inspection_id)
+        .order_by(InspectionInput.uploaded_at.desc())
+        .all()
+    )
+    if not inputs:
+        raise HTTPException(status_code=400, detail="No input images uploaded for this inspection")
+
     # Resolve paths (StorageService.UPLOAD_DIR does not exist — see upload_inspection_input)
     ref_resolved = StorageService.get_image_path(ref_img.storage_path)
     input_resolved = StorageService.get_image_path(inputs[0].storage_path)
@@ -203,6 +210,16 @@ async def run_inspection(
     ref_path = str(ref_resolved)
     input_path = str(input_resolved)
 
+    job = InspectionJob(
+        inspection_id=inspection.id,
+        status="running",
+        result_json={"started_by": current_user.id, "input_id": inputs[0].id},
+        started_at=datetime.utcnow(),
+    )
+    db.add(job)
+    inspection.status = InspectionStatusEnum.processing
+    db.commit()
+
     # Create agent run
     ctx = agent.create_run(
         inspection_id=inspection.id,
@@ -210,32 +227,72 @@ async def run_inspection(
         equipment_id=inspection.equipment_id,
         reference_image_path=ref_path,
         input_image_path=input_path,
+        requesting_user_id=current_user.id,
     )
 
-    # Update inspection status
-    inspection.status = InspectionStatusEnum.processing
-    db.commit()
+    started_at = datetime.utcnow()
+    failure: str | None = None
+    if inputs[0].input_type == "video":
+        # Sampled before the loop so the agent analyses decoded pixels; the frame
+        # rows and their measurements are persisted for the temporal view.
+        agent.sample_input_video(ctx, input_path)
+    try:
+        ctx = agent.run(ctx)
+    except Exception as error:  # the run persists its own trace before re-raising
+        failure = f"{type(error).__name__}: {error}"
 
-    # Run the agent
-    ctx = agent.run(ctx)
+    elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
 
-    # Fetch final status
-    run_status = agent.get_run_status(ctx.run_id)
-
-    # Update inspection status
-    from app.agent.state_machine import AgentState
-    if ctx.current_state == AgentState.END:
-        inspection.status = InspectionStatusEnum.completed
-    else:
-        inspection.status = InspectionStatusEnum.failed
     inspection.agent_run_id = ctx.run_id
-    inspection.ended_at = ctx.step_log[-1] if ctx.step_log else None
+    inspection.duration_ms = elapsed_ms
+    # step_log entries are dicts; assigning one to a DateTime column failed.
+    inspection.ended_at = None if ctx.current_state is AgentState.HUMAN_WAIT else datetime.utcnow()
+    inspection.status = _inspection_status_for(ctx.current_state)
+
+    job.status = "completed" if ctx.current_state is AgentState.END else inspection.status.value
+    job.result_json = {
+        "final_state": ctx.current_state.value,
+        "iterations": ctx.iterations,
+        "budget_used": ctx.budget_used,
+        "findings": len(ctx.findings),
+        "duration_ms": elapsed_ms,
+        "planner": "deterministic-rule-v1",
+        "error": failure or ctx.final_decision,
+    }
+    job.completed_at = datetime.utcnow()
     db.commit()
+
+    if failure:
+        raise HTTPException(status_code=500, detail=f"Agent run failed: {failure}")
 
     return InspectionResponse(
         inspection=InspectionRead.model_validate(inspection),
-        message=f"Inspection {ctx.current_state.value}. {len(ctx.findings)} findings created.",
+        message=(
+            f"Inspection {ctx.current_state.value}. {len(ctx.findings)} finding(s) created"
+            f" across {ctx.iterations} tool calls."
+        ),
     )
+
+
+def _inspection_status_for(state: AgentState) -> InspectionStatusEnum:
+    """Map agent state onto the inspection enum.
+
+    `AgentState.HUMAN_WAIT` has no enum twin, so it becomes awaiting_evidence —
+    the run really is waiting for another capture, and reporting `completed` or
+    `failed` here would misrepresent a pause as an outcome.
+    """
+    mapping = {
+        AgentState.ANALYSIS: InspectionStatusEnum.quality_check,
+        AgentState.DETECTION: InspectionStatusEnum.analyzing,
+        AgentState.FINDING: InspectionStatusEnum.finding,
+        AgentState.EVIDENCE: InspectionStatusEnum.awaiting_evidence,
+        AgentState.APPROVAL: InspectionStatusEnum.approval,
+        AgentState.HUMAN_WAIT: InspectionStatusEnum.awaiting_evidence,
+        AgentState.REPORTING: InspectionStatusEnum.completed,
+        AgentState.END: InspectionStatusEnum.completed,
+        AgentState.FAILED: InspectionStatusEnum.failed,
+    }
+    return mapping.get(state, InspectionStatusEnum.processing)
 
 
 @router.get("/{inspection_id}", response_model=dict)
@@ -302,8 +359,28 @@ async def get_inspection(
 
     return {
         "inspection": InspectionRead.model_validate(inspection),
-        "findings": [f.__dict__ for f in findings],
-        "observations": [o.__dict__ for o in observations],
+        # `obj.__dict__` carries SQLAlchemy's `_sa_instance_state`, which pydantic
+        # refuses to serialise — the endpoint 500'd as soon as a finding existed.
+        "findings": [FindingRead.model_validate(f).model_dump(mode="json") for f in findings],
+        "observations": [
+            {
+                "id": o.id,
+                "inspection_id": o.inspection_id,
+                "agent_run_id": o.agent_run_id,
+                "observation_type": o.observation_type,
+                "bbox_x": o.bbox_x,
+                "bbox_y": o.bbox_y,
+                "bbox_width": o.bbox_width,
+                "bbox_height": o.bbox_height,
+                "confidence": o.confidence,
+                "category": o.category,
+                "description": o.description,
+                "details_json": o.details_json,
+                "evidence_image_path": o.evidence_image_path,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+            }
+            for o in observations
+        ],
         "agent_run": run_info,
     }
 

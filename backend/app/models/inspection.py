@@ -149,6 +149,12 @@ class VisionObservation(Base):
     frame_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("inspection_frames.id"), nullable=True
     )
+    # Which run measured this. Without it a re-run left the previous run's numbers
+    # indistinguishable from the current ones, so `vision_observations` could not
+    # be read as "what the pipeline measured" for an inspection.
+    agent_run_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("agent_runs.id"), nullable=True
+    )
     observation_type: Mapped[str] = mapped_column(
         String(50), nullable=False
     )  # quality|defect|change|alignment|temporal

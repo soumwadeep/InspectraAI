@@ -236,7 +236,7 @@ class VisionEngine:
         self,
         reference_image: np.ndarray,
         input_image: np.ndarray,
-        ground_truth_boxes: list[list[float]],  # [[x1,y1,x2,y2], ...]
+        ground_truth_boxes: list,  # [[x1,y1,x2,y2], ...] or {"box": [...], "category": ...}
         iou_threshold: float = 0.5,
     ) -> DetectionMetrics:
         """
@@ -259,10 +259,31 @@ class VisionEngine:
         from app.vision.metrics import GroundTruthBox
         gt_boxes = [
             GroundTruthBox(
-                x1=box[0], y1=box[1], x2=box[2], y2=box[3],
-                category="ground_truth"
+                x1=box["box"][0] if isinstance(box, dict) else box[0],
+                y1=box["box"][1] if isinstance(box, dict) else box[1],
+                x2=box["box"][2] if isinstance(box, dict) else box[2],
+                y2=box["box"][3] if isinstance(box, dict) else box[3],
+                category=box.get("category", "anomaly") if isinstance(box, dict) else "anomaly",
             )
             for box in ground_truth_boxes
         ]
 
-        return calculate_precision_recall(predictions, gt_boxes, iou_threshold)
+        # Localisation is scored on geometry; the label score comes back as
+        # category_correct/category_total. Requiring the category to agree here made
+        # every prediction a false positive against generic ground truth.
+        metrics = calculate_precision_recall(
+            predictions, gt_boxes, iou_threshold, require_category_match=False
+        )
+        metrics.details = {
+            "ssim_score": result.change_detection.ssim_score,
+            "mean_abs_diff": result.change_detection.mean_abs_diff,
+            "predictions": [
+                {
+                    "bbox": [p.x1, p.y1, p.x2, p.y2],
+                    "category": p.category,
+                    "confidence": round(p.confidence, 4),
+                }
+                for p in predictions
+            ],
+        }
+        return metrics

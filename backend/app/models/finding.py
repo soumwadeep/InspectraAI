@@ -87,7 +87,7 @@ class FindingEvidence(Base):
     )
     evidence_type: Mapped[str] = mapped_column(
         String(50), nullable=False
-    )  # original|annotated|cropped|comparison
+    )  # annotated|cropped|comparison|annotated_reference|diff_overlay|diff_mask_raw
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     s3_key: Mapped[str] = mapped_column(String(512), nullable=True)
     caption: Mapped[str] = mapped_column(String(255), nullable=True)

@@ -55,3 +55,28 @@ class RepairVerificationRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TicketEventRead(BaseModel):
+    id: str
+    ticket_id: str
+    status: str
+    actor_id: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ApprovalRequestRead(BaseModel):
+    id: str
+    ticket_id: str
+    finding_id: str
+    requester_id: Optional[str] = None
+    approver_id: Optional[str] = None
+    status: str
+    reason: Optional[str] = None
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}

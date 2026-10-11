@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 router = APIRouter(prefix="/api/findings", tags=["findings"])
 
 
-@router.get("/", response_model=list[FindingRead])
+@router.get("", response_model=list[FindingRead])
 async def list_findings(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),

@@ -7,9 +7,16 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.dependencies import get_current_user, get_current_organization_id, get_db
+from app.core.storage import StorageService
 from app.models.agent import AgentRun, AgentStep, AgentToolCall
-from app.models.inspection import Inspection
-from app.schemas.agent import AgentRunRead, AgentStepRead, HumanResponse
+from app.models.equipment import EquipmentReferenceImage
+from app.models.inspection import Inspection, InspectionInput
+from app.schemas.agent import (
+    AgentRunRead,
+    AgentStepRead,
+    AgentToolCallRead,
+    HumanResponse,
+)
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -56,8 +63,15 @@ async def list_agent_runs(
             "final_action": run.final_action,
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "ended_at": run.ended_at.isoformat() if run.ended_at else None,
-            "steps": [s.__dict__ for s in steps],
-            "tool_calls": [tc.__dict__ for tc in tool_calls],
+            # `__dict__` carries SQLAlchemy's `_sa_instance_state`, which pydantic
+            # cannot serialise — the run list 500'd as soon as a run had steps.
+            "steps": [
+                AgentStepRead.model_validate(s).model_dump(mode="json") for s in steps
+            ],
+            "tool_calls": [
+                AgentToolCallRead.model_validate(tc).model_dump(mode="json")
+                for tc in tool_calls
+            ],
         })
 
     return result
@@ -136,7 +150,13 @@ async def resume_agent_run(
     current_user=Depends(get_current_user),
     org_id: str = Depends(get_current_organization_id),
 ):
-    """Resume a paused agent run with a human response."""
+    """Continue a paused agent run from its persisted context.
+
+    This endpoint used to append text to a finding and mark the run completed
+    without executing anything — it recorded a continuation that never happened.
+    It also raised UnboundLocalError on every call, because a local
+    `from datetime import datetime` below the point where `datetime` was used.
+    """
     run = db.query(AgentRun).filter(AgentRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Agent run not found")
@@ -146,23 +166,49 @@ async def resume_agent_run(
         raise HTTPException(status_code=403, detail="Access denied")
 
     if run.status != "paused":
-        raise HTTPException(status_code=400, detail="Run is not paused")
+        raise HTTPException(status_code=400, detail=f"Run is {run.status}, not paused")
 
-    # In a full implementation, we would resume the agent from where it left off
-    # For now, record the human response and mark as completed
-    from app.models.finding import Finding
-    if response.finding_id:
-        finding = db.query(Finding).filter(
-            Finding.id == response.finding_id,
-            Finding.inspection_id == run.inspection_id,
-        ).first()
-        if finding:
-            finding.notes = (finding.notes or "") + f"\n\nHuman response: {response.response}"
-            db.commit()
+    inputs = (
+        db.query(InspectionInput)
+        .filter(InspectionInput.inspection_id == inspection.id)
+        .order_by(InspectionInput.uploaded_at.desc())
+        .all()
+    )
+    if not inputs:
+        raise HTTPException(status_code=400, detail="Inspection has no input to resume from")
 
-    run.status = "completed"
-    run.ended_at = datetime.utcnow()
+    resolved = StorageService.get_image_path(inputs[0].storage_path)
+    reference = db.query(EquipmentReferenceImage).filter(
+        EquipmentReferenceImage.equipment_id == inspection.equipment_id
+    ).first()
+    reference_resolved = StorageService.get_image_path(reference.storage_path) if reference else None
+
+    if resolved is None or reference_resolved is None:
+        raise HTTPException(status_code=400, detail="Reference or capture file missing from storage")
+
+    from app.agent.tools import VisionTools
+    from app.agent.workflow import VisionAgent
+    from app.vision.engine import VisionEngine
+
+    agent = VisionAgent(db, VisionTools(VisionEngine()))
+
+    try:
+        status = agent.resume(run_id, response.response)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    db.refresh(inspection)
+    from app.api.inspection import _inspection_status_for
+    from app.agent.state_machine import AgentState
+
+    run_state = AgentState(status["run"]["final_outcome"].get("final_state", "failed"))
+    inspection.status = _inspection_status_for(run_state)
+    inspection.ended_at = None if run_state is AgentState.HUMAN_WAIT else datetime.utcnow()
     db.commit()
 
-    from datetime import datetime
-    return {"message": "Agent run resumed", "run_id": run_id, "status": "completed"}
+    return {
+        "message": "Agent run continued",
+        "run_id": run_id,
+        "status": status["run"]["status"],
+        "response": response.response,
+    }
