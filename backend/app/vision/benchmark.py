@@ -17,29 +17,40 @@ WIDTH = 960
 HEIGHT = 640
 
 
-def _base_panel(rng: np.random.Generator) -> np.ndarray:
+def _base_panel(
+    rng: np.random.Generator, size: tuple[int, int] = (WIDTH, HEIGHT)
+) -> np.ndarray:
     """Deterministic industrial panel: brushed field, hatch grid, bolts, vents.
 
     Reference and capture share one base draw, so the only difference between them
     is the injected defect. Two independently noised panels produced 36 phantom
     regions for one real defect in earlier testing.
+
+    `size` is larger than the frame when a caller wants to crop a window out of a
+    continuous field — see the seeder's note on replicated borders.
     """
-    base = rng.integers(120, 165, (HEIGHT, WIDTH, 1), dtype=np.uint8)
-    panel = np.repeat(base, 3, axis=2)
+    width, height = size
+    # A brushed field with *mild* noise. The first version drew each pixel from
+    # 120..165, which put the panel's own texture right on the detector's
+    # diff_threshold — a clean shifted retake then produced a whole-frame region
+    # and single defects produced extra ones. Structure comes from the hatch,
+    # bolts and plate below, which is what ORB actually registers on.
+    base = 140 + rng.integers(-6, 7, (height, width, 1), dtype=np.int16)
+    panel = np.repeat(np.clip(base, 0, 255).astype(np.uint8), 3, axis=2)
     panel = cv2.GaussianBlur(panel, (0, 0), 0.8)
 
     # Hatch grid
-    for x in range(40, WIDTH - 40, 26):
-        cv2.line(panel, (x, 60), (x + 30, HEIGHT - 60), (95, 95, 95), 1)
-    for y in range(80, HEIGHT - 60, 44):
-        cv2.line(panel, (40, y), (WIDTH - 40, y + 12), (170, 170, 170), 1)
+    for x in range(40, width - 40, 26):
+        cv2.line(panel, (x, 60), (x + 30, height - 60), (95, 95, 95), 1)
+    for y in range(80, height - 60, 44):
+        cv2.line(panel, (40, y), (width - 40, y + 12), (170, 170, 170), 1)
 
     # Bolt circle and vent plate give repeatable corners for ORB.
-    cv2.circle(panel, (WIDTH // 2, HEIGHT // 2), 150, (80, 80, 80), 3)
+    cv2.circle(panel, (width // 2, height // 2), 150, (80, 80, 80), 3)
     for angle in range(0, 360, 45):
         rad = np.deg2rad(angle)
-        cx = int(WIDTH / 2 + 150 * np.cos(rad))
-        cy = int(HEIGHT / 2 + 150 * np.sin(rad))
+        cx = int(width / 2 + 150 * np.cos(rad))
+        cy = int(height / 2 + 150 * np.sin(rad))
         cv2.circle(panel, (cx, cy), 11, (60, 60, 60), -1)
         cv2.circle(panel, (cx, cy), 4, (190, 190, 190), -1)
     cv2.rectangle(panel, (80, 80), (240, 180), (70, 70, 70), 2)
@@ -62,7 +73,8 @@ def _rust_patch(rng: np.random.Generator, img: np.ndarray, cx: int, cy: int, rad
 
 
 def _soot_smudge(img: np.ndarray, cx: int, cy: int, radius: int) -> None:
-    mask = np.zeros((HEIGHT, WIDTH), dtype=np.float32)
+    height, width = img.shape[:2]
+    mask = np.zeros((height, width), dtype=np.float32)
     cv2.ellipse(mask, (cx, cy), (radius, int(radius * 0.8)), 0, 0, 360, 1.0, -1)
     soft = cv2.GaussianBlur(mask, (0, 0), radius * 0.4)
     strength = (soft * 190).astype(np.int16)
@@ -96,20 +108,60 @@ class BenchmarkPair:
 DEFECTS = ("discoloration", "dark_patch", "brightness_increase", "detail_loss")
 
 
+def inject_defect(
+    rng: np.random.Generator,
+    category: str,
+    img: np.ndarray,
+    cx: int,
+    cy: int,
+    radius: int,
+) -> None:
+    """Draw one labelled defect. Public so the seed script and the benchmark
+    corpus cannot drift apart on what a "discoloration" actually looks like."""
+    if category not in DEFECTS:
+        raise ValueError(f"Unknown defect category: {category}")
+    if category == "discoloration":
+        _rust_patch(rng, img, cx, cy, radius)
+    elif category == "dark_patch":
+        _soot_smudge(img, cx, cy, radius)
+    elif category == "brightness_increase":
+        _glare_spot(img, cx, cy, radius)
+    else:
+        _erased_detail(img, cx - radius, cy - int(radius * 0.7), radius * 2, int(radius * 1.4))
+
+
+def draw_panel(
+    rng: np.random.Generator, size: tuple[int, int] = (WIDTH, HEIGHT)
+) -> np.ndarray:
+    """Public entry to the base panel, shared by the corpus and the seeder."""
+    return _base_panel(rng, size=size)
+
+
+FIELD_PAD = 40
+
+
 def build_corpus(pair_count: int = 12, seed: int = 7) -> list[BenchmarkPair]:
-    """Generate reference/capture pairs with ground truth in reference coordinates."""
+    """Generate reference/capture pairs with ground truth in reference coordinates.
+
+    A pair is two windows onto one oversized draw, offset by (tx, ty). The earlier
+    version shifted with `warpAffine(..., BORDER_REPLICATE)`, which duplicates the
+    edge column down one side; the detector read that replicated band as change and
+    scored false positives against artefacts of the fixture rather than against the
+    pipeline.
+    """
     rng = np.random.default_rng(seed)
+    origin = FIELD_PAD // 2
 
     pairs: list[BenchmarkPair] = []
     for index in range(pair_count):
-        reference = _base_panel(rng)
-        capture = reference.copy()
+        field = _base_panel(rng, size=(WIDTH + FIELD_PAD, HEIGHT + FIELD_PAD))
 
-        # A real retake is never pixel-registered: shift so alignment has to work,
-        # and keep ground truth expressed in reference coordinates.
+        # A real retake is never pixel-registered: the framing moves, so alignment
+        # has genuine work to do.
         tx, ty = int(rng.integers(-14, 15)), int(rng.integers(-14, 15))
-        shift = np.float32([[1, 0, tx], [0, 1, ty]])
-        capture = cv2.warpAffine(capture, shift, (WIDTH, HEIGHT), borderMode=cv2.BORDER_REPLICATE)
+        reference = field[origin:origin + HEIGHT, origin:origin + WIDTH].copy()
+        capture = field[origin + ty:origin + ty + HEIGHT,
+                        origin + tx:origin + tx + WIDTH].copy()
 
         # 25% of the corpus is a clean pair: the runner scores its false positives.
         defect_count = 0 if index % 4 == 3 else int(rng.integers(1, 3))
@@ -121,21 +173,15 @@ def build_corpus(pair_count: int = 12, seed: int = 7) -> list[BenchmarkPair]:
             cx = int(rng.integers(radius + 60, WIDTH - radius - 60))
             cy = int(rng.integers(radius + 60, HEIGHT - radius - 60))
 
-            if category == "discoloration":
-                _rust_patch(rng, capture, cx, cy, radius)
-            elif category == "dark_patch":
-                _soot_smudge(capture, cx, cy, radius)
-            elif category == "brightness_increase":
-                _glare_spot(capture, cx, cy, radius)
-            else:
-                w, h = radius * 2, int(radius * 1.4)
-                _erased_detail(capture, cx - w // 2, cy - h // 2, w, h)
+            inject_defect(rng, category, capture, cx, cy, radius)
 
-            # Undo the shift so the box is in the frame the detector reports on.
-            x1 = max(0.0, (cx - radius - tx) / WIDTH)
-            y1 = max(0.0, (cy - radius - ty) / HEIGHT)
-            x2 = min(1.0, (cx + radius - tx) / WIDTH)
-            y2 = min(1.0, (cy + radius - ty) / HEIGHT)
+            # The capture window sits (tx, ty) past the reference window, so content
+            # at capture coordinate c appears at c + (tx, ty) in the reference frame
+            # the detector reports on.
+            x1 = max(0.0, (cx - radius + tx) / WIDTH)
+            y1 = max(0.0, (cy - radius + ty) / HEIGHT)
+            x2 = min(1.0, (cx + radius + tx) / WIDTH)
+            y2 = min(1.0, (cy + radius + ty) / HEIGHT)
             truths.append({
                 "box": [x1, y1, x2, y2],
                 "category": category,

@@ -27,9 +27,12 @@ async def get_analytics_overview(
     """Get comprehensive analytics overview for the current organization."""
     since = datetime.utcnow() - timedelta(days=days)
 
-    # Counts
+    # Counts. Archived assets are excluded to match the equipment-status
+    # breakdown below; counting them here made "Total equipment" disagree with the
+    # chart next to it on any workspace that had archived an asset.
     total_equipment = db.query(func.count(Equipment.id)).filter(
-        Equipment.organization_id == org_id
+        Equipment.organization_id == org_id,
+        Equipment.is_archived.is_(False),
     ).scalar()
 
     total_inspections = db.query(func.count(Inspection.id)).filter(

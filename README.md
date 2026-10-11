@@ -39,6 +39,17 @@ Then open **http://localhost:3000** and register an organization at `/register`.
 The first registrant in a database becomes the `administrator`. There are no
 seeded credentials to look up, on purpose.
 
+To get a populated workspace instead of an empty one, run the seeder. It creates a
+separate organization and drives the **real** pipeline over generated captures, so
+every finding, severity, ticket and metric it writes is a measured output:
+
+```bash
+cd backend && python3 -m scripts.seed_demo_data
+```
+
+It prints one-time generated passwords, stores no credential in the repo, refuses
+to touch an existing slug, and never deletes or overwrites anything.
+
 ⚠️ **Use `localhost`, not `127.0.0.1`.** The API allowlists `http://localhost:3000`
 — the `cors_origins` default in `backend/app/config.py`, overridable with a
 comma-separated `CORS_ORIGINS` env var. Browsers treat `http://127.0.0.1:3000` as
@@ -115,29 +126,55 @@ from the stored snapshot.
 ## Measured results
 
 These are outputs of the pipeline, produced by
-`POST /api/benchmarks/run {"pairs": 8, "seed": 7, "iou_threshold": 0.3}` and
+`POST /api/benchmarks/run {"pairs": 32, "seed": 7, "iou_threshold": 0.3}` and
 stored in `benchmark_runs.results_json` with the seed that reproduces them.
 
-| Metric | Value |
-|---|---|
-| Precision | **0.90** |
-| Recall | **1.00** |
-| F1 | **0.9474** |
-| Mean IoU (matched) | **0.641** |
-| Category accuracy on matched regions | **9/9** |
-| True / false positives / false negatives | 9 / 1 / 0 |
-| Pipeline time | 2 216 ms over 8 pairs (277 ms/pair) |
+| Metric | 32 pairs | 8 pairs |
+|---|---|---|
+| Precision | **0.886** | **1.000** |
+| Recall | **0.689** | **0.833** |
+| F1 | **0.775** | **0.909** |
+| Mean IoU (matched) | **0.572** | 0.539 |
+| Category accuracy on matched regions | **31/31** | 10/10 |
+| True / false positives / false negatives | 31 / 4 / 14 | 10 / 0 / 2 |
+| Clean pairs producing a false positive | **0 of 8** | 0 of 2 |
 
-**Scope of that number, stated precisely:** it measures
+**Where the misses come from, measured rather than guessed.** Recall by defect
+type across the 32-pair corpus: `discoloration` 13 present / 0 missed,
+`brightness_increase` 14 / 0, `dark_patch` 5 / 0, **`detail_loss` 13 / 9**.
+
+Every recall loss is `detail_loss` — a patch where hatch lines were painted over
+with the surrounding field colour. It removes texture and edge density while
+leaving mean intensity almost unchanged, and the detector's first stage is an
+absolute difference, so there is nothing for it to threshold on. The
+`detail_loss` findings that do land come from blocks that kept a slight tonal
+edge. That is a structural limit of difference-based detection, not a tuning
+accident, and it is why the seeded demo shows detail-loss captures with zero
+findings.
+
+**Scope of those numbers, stated precisely:** they measure
 `backend/app/vision/benchmark.py`'s **labelled synthetic corpus** — a
 deterministic generated panel (hatch grid, bolt circle, vent plate) with defects
-injected at known coordinates, each capture shifted ±14 px so registration has
-real work to do, and every fourth pair deliberately clean so false positives are
-scored. It is **not** accuracy on real plant imagery and must not be quoted as
-such. The response keeps each pair's ground-truth boxes and raw predictions so
-the aggregate can be audited; the one false positive is reported, not removed.
+injected at known coordinates, each capture taken as a window offset up to ±14 px
+from the reference window so registration has real work to do, and every fourth
+pair deliberately clean so false positives are scored. It is **not** accuracy on
+real plant imagery and must not be quoted as such. The response keeps each pair's
+ground-truth boxes and raw predictions so the aggregate can be audited.
+
+**These numbers replaced a better-looking set** — precision 0.90, recall 1.00,
+F1 0.9474, mean IoU 0.641 over 8 pairs. The old fixture flattered the pipeline and
+hid a real bug; fixing both lowered the score. `warpAffine(..., BORDER_REPLICATE)`
+manufactured an edge band that the detector reported as a whole-frame defect on
+captures with nothing wrong with them, and the agent's detection step had been
+running with **no alignment validity mask at all**, because the alignment tool
+never wrote the `_mask.png` file the detector expected to find. Full detail in
+`docs/phases/PHASE_04_REPORT.md`.
 
 ### Traces captured over HTTP (Phase 3)
+
+_Recorded before the alignment-mask fix below, so the region counts here are from
+the fixture that over-reported; the seeded traces in `docs/phases/PHASE_04_REPORT.md`
+are the current behaviour. The branch logic each one demonstrates is unchanged._
 
 Same image → same trace; different image → a genuinely different path.
 

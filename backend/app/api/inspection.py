@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 import os
-import time
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.agent.state_machine import AgentState
 from app.config import settings
 from app.core.dependencies import get_current_user, get_current_organization_id, get_db
 from app.core.storage import MAX_FILE_SIZE_BYTES, StorageService
@@ -15,7 +13,6 @@ from app.models.equipment import Equipment
 from app.models.inspection import (
     Inspection,
     InspectionInput,
-    InspectionJob,
     InspectionStatusEnum,
 )
 from app.schemas.finding import FindingRead
@@ -25,9 +22,11 @@ from app.schemas.inspection import (
     InspectionResponse,
     InspectionStartRequest,
 )
-from app.agent.workflow import VisionAgent
-from app.agent.tools import VisionTools
-from app.vision.engine import VisionEngine
+from app.services.inspection_run import (
+    InspectionRunError,
+    execute_inspection_run,
+    resolve_run_inputs,
+)
 
 from sqlalchemy.orm import Session
 
@@ -172,95 +171,14 @@ async def run_inspection(
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
 
-    # Get reference image
-    from app.models.equipment import EquipmentReferenceImage
-    ref_img = db.query(EquipmentReferenceImage).filter(
-        EquipmentReferenceImage.equipment_id == inspection.equipment_id
-    ).first()
-
-    if not ref_img:
-        raise HTTPException(
-            status_code=400,
-            detail="No reference image for this equipment. Upload one first."
-        )
-
-    # Initialize engine and agent
-    engine = VisionEngine()
-    tools = VisionTools(engine)
-    agent = VisionAgent(db, tools)
-
-    # The most recent capture wins: after a retake request the rejected image must
-    # not be the one measured again.
-    inputs = (
-        db.query(InspectionInput)
-        .filter(InspectionInput.inspection_id == inspection_id)
-        .order_by(InspectionInput.uploaded_at.desc())
-        .all()
-    )
-    if not inputs:
-        raise HTTPException(status_code=400, detail="No input images uploaded for this inspection")
-
-    # Resolve paths (StorageService.UPLOAD_DIR does not exist — see upload_inspection_input)
-    ref_resolved = StorageService.get_image_path(ref_img.storage_path)
-    input_resolved = StorageService.get_image_path(inputs[0].storage_path)
-
-    if ref_resolved is None or input_resolved is None:
-        raise HTTPException(status_code=400, detail="Image files not found on disk")
-
-    ref_path = str(ref_resolved)
-    input_path = str(input_resolved)
-
-    job = InspectionJob(
-        inspection_id=inspection.id,
-        status="running",
-        result_json={"started_by": current_user.id, "input_id": inputs[0].id},
-        started_at=datetime.utcnow(),
-    )
-    db.add(job)
-    inspection.status = InspectionStatusEnum.processing
-    db.commit()
-
-    # Create agent run
-    ctx = agent.create_run(
-        inspection_id=inspection.id,
-        organization_id=org_id,
-        equipment_id=inspection.equipment_id,
-        reference_image_path=ref_path,
-        input_image_path=input_path,
-        requesting_user_id=current_user.id,
-    )
-
-    started_at = datetime.utcnow()
-    failure: str | None = None
-    if inputs[0].input_type == "video":
-        # Sampled before the loop so the agent analyses decoded pixels; the frame
-        # rows and their measurements are persisted for the temporal view.
-        agent.sample_input_video(ctx, input_path)
     try:
-        ctx = agent.run(ctx)
-    except Exception as error:  # the run persists its own trace before re-raising
-        failure = f"{type(error).__name__}: {error}"
+        inputs = resolve_run_inputs(db, inspection)
+    except InspectionRunError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
-    elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
-
-    inspection.agent_run_id = ctx.run_id
-    inspection.duration_ms = elapsed_ms
-    # step_log entries are dicts; assigning one to a DateTime column failed.
-    inspection.ended_at = None if ctx.current_state is AgentState.HUMAN_WAIT else datetime.utcnow()
-    inspection.status = _inspection_status_for(ctx.current_state)
-
-    job.status = "completed" if ctx.current_state is AgentState.END else inspection.status.value
-    job.result_json = {
-        "final_state": ctx.current_state.value,
-        "iterations": ctx.iterations,
-        "budget_used": ctx.budget_used,
-        "findings": len(ctx.findings),
-        "duration_ms": elapsed_ms,
-        "planner": "deterministic-rule-v1",
-        "error": failure or ctx.final_decision,
-    }
-    job.completed_at = datetime.utcnow()
-    db.commit()
+    ctx, failure = execute_inspection_run(
+        db, inspection=inspection, org_id=org_id, user_id=current_user.id, inputs=inputs
+    )
 
     if failure:
         raise HTTPException(status_code=500, detail=f"Agent run failed: {failure}")
@@ -272,27 +190,6 @@ async def run_inspection(
             f" across {ctx.iterations} tool calls."
         ),
     )
-
-
-def _inspection_status_for(state: AgentState) -> InspectionStatusEnum:
-    """Map agent state onto the inspection enum.
-
-    `AgentState.HUMAN_WAIT` has no enum twin, so it becomes awaiting_evidence —
-    the run really is waiting for another capture, and reporting `completed` or
-    `failed` here would misrepresent a pause as an outcome.
-    """
-    mapping = {
-        AgentState.ANALYSIS: InspectionStatusEnum.quality_check,
-        AgentState.DETECTION: InspectionStatusEnum.analyzing,
-        AgentState.FINDING: InspectionStatusEnum.finding,
-        AgentState.EVIDENCE: InspectionStatusEnum.awaiting_evidence,
-        AgentState.APPROVAL: InspectionStatusEnum.approval,
-        AgentState.HUMAN_WAIT: InspectionStatusEnum.awaiting_evidence,
-        AgentState.REPORTING: InspectionStatusEnum.completed,
-        AgentState.END: InspectionStatusEnum.completed,
-        AgentState.FAILED: InspectionStatusEnum.failed,
-    }
-    return mapping.get(state, InspectionStatusEnum.processing)
 
 
 @router.get("/{inspection_id}", response_model=dict)

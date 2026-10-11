@@ -198,11 +198,11 @@ async def resume_agent_run(
         raise HTTPException(status_code=400, detail=str(error)) from error
 
     db.refresh(inspection)
-    from app.api.inspection import _inspection_status_for
     from app.agent.state_machine import AgentState
+    from app.services.inspection_run import inspection_status_for
 
     run_state = AgentState(status["run"]["final_outcome"].get("final_state", "failed"))
-    inspection.status = _inspection_status_for(run_state)
+    inspection.status = inspection_status_for(run_state)
     inspection.ended_at = None if run_state is AgentState.HUMAN_WAIT else datetime.utcnow()
     db.commit()
 

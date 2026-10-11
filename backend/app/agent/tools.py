@@ -406,9 +406,20 @@ class VisionTools:
         if result.aligned_image is not None and output_dir:
             target = Path(output_dir)
             target.mkdir(parents=True, exist_ok=True)
-            aligned_path = target / f"aligned_{uuid.uuid4().hex[:8]}.png"
+            suffix = uuid.uuid4().hex[:8]
+            aligned_path = target / f"aligned_{suffix}.png"
             if cv2.imwrite(str(aligned_path), result.aligned_image):
                 artifact["aligned_image_path"] = str(aligned_path)
+
+            # The homography leaves a band of zero-filled pixels wherever the
+            # warped capture does not cover the reference frame. `detect_visual_changes`
+            # looks for `<aligned stem>_mask.png` and subtracts that band; without it
+            # the border is compared against real content and reported as a change
+            # region — which is how a clean retake produced a whole-frame finding.
+            if result.aligned_mask is not None:
+                mask_path = target / f"aligned_{suffix}_mask.png"
+                if cv2.imwrite(str(mask_path), result.aligned_mask):
+                    artifact["aligned_mask_path"] = str(mask_path)
 
         return ToolResult(
             tool_name="align_with_reference",

@@ -52,6 +52,11 @@ class ChangeDetectionConfig:
     morphological_kernel_size: int = 5
     morphological_iterations: int = 2
     contour_filter_factor: float = 0.01
+    # Pixels within this many columns/rows of the coverage boundary are dropped
+    # even when the warp mask calls them valid: resampling at the seam of a
+    # homography is unreliable, and it was producing 1-3px full-height "dark_patch"
+    # strips along the frame edge on captures with no defect in them.
+    mask_margin_px: int = 3
 
 
 class ChangeDetector:
@@ -146,10 +151,18 @@ class ChangeDetector:
 
         # Apply aligned mask if available (mask out invalid regions)
         if aligned_mask is not None:
-            diff_thresh = cv2.bitwise_and(
-                diff_thresh, diff_thresh,
-                mask=(aligned_mask > 0).astype(np.uint8) * 255
-            )
+            valid = (aligned_mask > 0).astype(np.uint8) * 255
+            margin = self.config.mask_margin_px
+            if margin > 0:
+                # Shrink coverage by a few pixels so the homography's resampling
+                # seam is never scored as a change.
+                valid = cv2.erode(
+                    valid,
+                    cv2.getStructuringElement(
+                        cv2.MORPH_RECT, (margin * 2 + 1, margin * 2 + 1)
+                    ),
+                )
+            diff_thresh = cv2.bitwise_and(diff_thresh, diff_thresh, mask=valid)
 
         # Morphological cleanup
         kernel = cv2.getStructuringElement(
