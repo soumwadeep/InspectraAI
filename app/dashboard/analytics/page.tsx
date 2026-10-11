@@ -36,6 +36,7 @@ import {
 import { ApiError } from "@/lib/api";
 import type { AgentRun, BadgeVariant, FindingStatus, Inspection } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
+import { entry, stagger } from "@/lib/motion/presets";
 
 /**
  * `GET /api/analytics/overview?days=N` applies `days` to
@@ -268,19 +269,6 @@ export default function AnalyticsPage() {
 
   const { data: equipment, isError: equipmentFailed } = useEquipment();
 
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1, delayChildren: 0.1 },
-    },
-  };
-
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
-  };
-
   // ---- Derived from `GET /api/analytics/overview` -------------------------
 
   /** Days inside the trend window that actually contain inspections. */
@@ -457,11 +445,11 @@ export default function AnalyticsPage() {
         <>
           <motion.div
             className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
-            variants={container}
+            variants={stagger.rail}
             initial="hidden"
-            animate="show"
+            animate="visible"
           >
-            <motion.div variants={item}>
+            <motion.div variants={entry.boot}>
               <MetricCard
                 title="Inspections recorded"
                 value={analytics.total_inspections}
@@ -484,7 +472,7 @@ export default function AnalyticsPage() {
                 }
               />
             </motion.div>
-            <motion.div variants={item}>
+            <motion.div variants={entry.boot}>
               <MetricCard
                 title="Equipment monitored"
                 value={analytics.total_equipment}
@@ -495,7 +483,7 @@ export default function AnalyticsPage() {
                 }
               />
             </motion.div>
-            <motion.div variants={item}>
+            <motion.div variants={entry.boot}>
               <MetricCard
                 title="Findings awaiting review"
                 value={analytics.pending_review}
@@ -506,7 +494,7 @@ export default function AnalyticsPage() {
                 }
               />
             </motion.div>
-            <motion.div variants={item}>
+            <motion.div variants={entry.boot}>
               <MetricCard
                 title="Confirmed findings"
                 value={analytics.confirmed_findings}
@@ -517,7 +505,7 @@ export default function AnalyticsPage() {
                 }
               />
             </motion.div>
-            <motion.div variants={item}>
+            <motion.div variants={entry.boot}>
               <MetricCard
                 title="Open maintenance tickets"
                 value={analytics.open_tickets}
@@ -530,7 +518,7 @@ export default function AnalyticsPage() {
                 }
               />
             </motion.div>
-            <motion.div variants={item}>
+            <motion.div variants={entry.boot}>
               <MetricCard
                 title="Avg. inspection duration"
                 value={analytics.avg_processing_ms > 0 ? formatDuration(analytics.avg_processing_ms) : "—"}

@@ -12,23 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBenchmarks, useSystemHealth } from "@/lib/hooks";
 import { formatDate } from "@/lib/utils";
+import { entry, stagger } from "@/lib/motion/presets";
 import { Gauge, AlertCircle, Database, Server, Cpu, Clock } from "@/components/icons";
 
 /** Copied from the error message in `components/mission/system-health-panel.tsx`. */
 const BACKEND_START_COMMAND = "python3 -m uvicorn app.main:app --port 8000";
-
-const container = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1, delayChildren: 0.1 },
-  },
-};
-
-const item = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
-};
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -115,11 +103,11 @@ export default function BenchmarksPage() {
       {/* Runtime facts, read from the live process */}
       <motion.div
         className="grid grid-cols-1 gap-6 lg:grid-cols-2"
-        variants={container}
+        variants={stagger.sequence}
         initial="hidden"
-        animate="show"
+        animate="visible"
       >
-        <motion.div variants={item}>
+        <motion.div variants={entry.rise}>
           <Card>
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">
@@ -186,7 +174,7 @@ export default function BenchmarksPage() {
           </Card>
         </motion.div>
 
-        <motion.div variants={item}>
+        <motion.div variants={entry.rise}>
           <Card className="border-border/50 bg-surface-elevated/30">
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">

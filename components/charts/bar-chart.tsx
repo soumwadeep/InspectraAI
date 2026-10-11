@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import {
   Bar,
   BarChart,
@@ -10,7 +11,16 @@ import {
   YAxis,
   Legend,
 } from "@/lib/recharts-wrapper";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import {
+  axisTick,
+  gridStroke,
+  tooltipItemStyle,
+  tooltipLabelStyle,
+  tooltipStyle,
+  useIsMounted,
+} from "./chart-theme";
 
 interface DataItem {
   [key: string]: string | number;
@@ -25,77 +35,65 @@ interface BarChartProps {
     color: string;
   }[];
   className?: string;
+  height?: number;
 }
 
-export function CustomBarChart({ data, xKey, bars, className }: BarChartProps) {
-  const colors = {
-    cyan: "#38BDF8",
-    "cyan-light": "#22D3EE",
-    purple: "#A78BFA",
-    pink: "#EC4899",
-    green: "#10B981",
-    orange: "#F59E0B",
-    red: "#EF4444",
-    yellow: "#FBBF24",
-  };
+export function CustomBarChart({
+  data,
+  xKey,
+  bars,
+  className,
+  height = 300,
+}: BarChartProps) {
+  const gradientRoot = useId().replace(/:/g, "");
+  const mounted = useIsMounted();
+
+  if (!mounted) {
+    return <Skeleton className={cn("w-full", className)} style={{ height }} />;
+  }
 
   return (
-    <ResponsiveContainer width="100%" height={300} className={cn("", className)}>
+    <ResponsiveContainer width="100%" height={height} className={cn(className)}>
       <BarChart data={data}>
         <defs>
           {bars.map((bar) => (
-            <linearGradient key={bar.key} id={`grad-${bar.key}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={bar.color} stopOpacity={0.8} />
+            <linearGradient
+              key={bar.key}
+              id={`grad-${gradientRoot}-${bar.key}`}
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="1"
+            >
+              <stop offset="0%" stopColor={bar.color} stopOpacity={0.9} />
               <stop offset="100%" stopColor={bar.color} stopOpacity={0.3} />
             </linearGradient>
           ))}
         </defs>
-        <CartesianGrid
-          strokeDasharray="3 3"
-          stroke="var(--border)"
-          vertical={false}
-        />
+        <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
         <XAxis
           dataKey={xKey}
           axisLine={false}
           tickLine={false}
-          tick={{ fill: "var(--secondary-text)", fontSize: 12 }}
+          tick={axisTick}
           padding={{ left: 10, right: 10 }}
         />
-        <YAxis
-          axisLine={false}
-          tickLine={false}
-          tick={{ fill: "var(--secondary-text)", fontSize: 12 }}
-          tickCount={5}
-        />
+        <YAxis axisLine={false} tickLine={false} tick={axisTick} tickCount={5} width={34} />
         <Tooltip
-          contentStyle={{
-            backgroundColor: "rgba(17, 24, 40, 0.9)",
-            border: "1px solid var(--border)",
-            borderRadius: "0.5rem",
-          }}
-          itemStyle={{
-            color: "var(--primary-text)",
-            fontSize: "12px",
-          }}
-          labelStyle={{
-            color: "var(--secondary-text)",
-            fontSize: "12px",
-          }}
-          cursor={{ fill: "rgba(56, 189, 248, 0.05)" }}
+          contentStyle={tooltipStyle}
+          itemStyle={tooltipItemStyle}
+          labelStyle={tooltipLabelStyle}
+          cursor={{ fill: "rgb(var(--color-primary) / 0.06)" }}
         />
         <Legend
-          wrapperStyle={{
-            color: "var(--secondary-text)",
-            fontSize: "12px",
-          }}
+          wrapperStyle={{ color: "rgb(var(--color-secondary-text))", fontSize: "11px" }}
         />
         {bars.map((bar) => (
           <Bar
             key={bar.key}
             dataKey={bar.key}
             name={bar.name}
-            fill={`url(#grad-${bar.key})`}
+            fill={`url(#grad-${gradientRoot}-${bar.key})`}
             radius={[4, 4, 0, 0]}
             barSize={20}
           />

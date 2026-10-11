@@ -1,45 +1,54 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  ThemeProvider as NextThemesProvider,
+  useTheme as useNextTheme,
+} from "next-themes";
+import { useEffect, useState } from "react";
 
 type Theme = "dark" | "light";
 
 interface ThemeContextType {
   theme: Theme;
   toggleTheme: () => void;
+  /** True once the stored theme has been read, so consumers can avoid a flash. */
+  resolved: boolean;
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-
+/**
+ * Wraps next-themes but keeps the `{ theme, toggleTheme }` API the sidebar and
+ * settings page already use.
+ *
+ * The previous hand-rolled provider applied the class inside `useEffect`, which
+ * always painted the default theme first; next-themes injects a blocking script
+ * instead. `enableSystem` is off deliberately: a mission-control demo should not
+ * boot into the light palette because the reviewer's OS is in daylight.
+ */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
-
-  useEffect(() => {
-    const stored = localStorage.getItem("theme") as Theme | null;
-    if (stored) {
-      setTheme(stored);
-      document.documentElement.classList.toggle("light", stored === "light");
-      document.documentElement.classList.toggle("dark", stored === "dark");
-    } else {
-      document.documentElement.classList.add("dark");
-    }
-  }, []);
-
-  const toggleTheme = () => {
-    const newTheme = theme === "dark" ? "light" : "dark";
-    setTheme(newTheme);
-    document.documentElement.classList.toggle("light", newTheme === "light");
-    document.documentElement.classList.toggle("dark", newTheme === "dark");
-    localStorage.setItem("theme", newTheme);
-  };
-
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>
+    <NextThemesProvider
+      attribute="class"
+      defaultTheme="dark"
+      enableSystem={false}
+      disableTransitionOnChange
+    >
+      {children}
+    </NextThemesProvider>
   );
 }
 
-export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) throw new Error("useTheme must be used within ThemeProvider");
-  return context;
+export const useTheme = (): ThemeContextType => {
+  const { theme, setTheme, resolvedTheme } = useNextTheme();
+  // next-themes reports null until it has read storage on the client.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const current: Theme =
+    (mounted ? (theme ?? resolvedTheme) : "dark") === "light" ? "light" : "dark";
+
+  return {
+    theme: current,
+    resolved: mounted,
+    toggleTheme: () => setTheme(current === "dark" ? "light" : "dark"),
+  };
 };

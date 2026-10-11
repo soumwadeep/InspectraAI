@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CustomBarChart } from "@/components/charts/bar-chart";
 import { useAgentRuns } from "@/lib/hooks";
 import { AgentRun, AgentStep, BadgeVariant } from "@/lib/types";
+import { entry, stagger } from "@/lib/motion/presets";
 import { cn, formatDate } from "@/lib/utils";
 import { ColumnDef } from "@tanstack/react-table";
 import {
@@ -135,19 +136,6 @@ const columns: ColumnDef<AgentRun>[] = [
 export default function AgentPage() {
   const { data: agentRuns, isLoading } = useAgentRuns();
 
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1, delayChildren: 0.1 },
-    },
-  };
-
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
-  };
-
   const runs = agentRuns ?? [];
   const completedCount = runs.filter((r) => r.status === "completed").length;
   const runningCount = runs.filter((r) => r.status === "running").length;
@@ -213,11 +201,11 @@ export default function AgentPage() {
       {/* Summary Cards */}
       <motion.div
         className="grid grid-cols-1 gap-4 sm:grid-cols-4"
-        variants={container}
+        variants={stagger.rail}
         initial="hidden"
-        animate="show"
+        animate="visible"
       >
-        <motion.div variants={item}>
+        <motion.div variants={entry.boot}>
           <MetricCard
             title="Total Runs"
             value={isLoading ? "—" : runs.length}
@@ -230,7 +218,7 @@ export default function AgentPage() {
             }
           />
         </motion.div>
-        <motion.div variants={item}>
+        <motion.div variants={entry.boot}>
           <MetricCard
             title="Completed"
             value={isLoading ? "—" : completedCount}
@@ -243,7 +231,7 @@ export default function AgentPage() {
             }
           />
         </motion.div>
-        <motion.div variants={item}>
+        <motion.div variants={entry.boot}>
           <MetricCard
             title="Running"
             value={isLoading ? "—" : runningCount}
@@ -256,7 +244,7 @@ export default function AgentPage() {
             }
           />
         </motion.div>
-        <motion.div variants={item}>
+        <motion.div variants={entry.boot}>
           <MetricCard
             title="Avg Budget Used"
             value={isLoading ? "—" : `${avgBudget}`}
@@ -393,16 +381,19 @@ export default function AgentPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
+              <motion.div
+                className="space-y-3"
+                variants={stagger.sequence}
+                initial="hidden"
+                animate="visible"
+              >
                 {latestRun.steps.map((step: AgentStep, i: number) => {
                   const isLast = i === latestRun.steps.length - 1;
                   return (
                     <motion.div
                       key={step.id}
                       className="flex items-start gap-4 rounded-lg bg-surface/30 p-4"
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.6 + i * 0.05 }}
+                      variants={entry.rise}
                     >
                       <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
                         <span className="text-xs font-bold">{step.step}</span>
@@ -442,7 +433,7 @@ export default function AgentPage() {
                     </motion.div>
                   );
                 })}
-              </div>
+              </motion.div>
             </CardContent>
           </Card>
         </motion.div>

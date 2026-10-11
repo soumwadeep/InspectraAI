@@ -1,17 +1,19 @@
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
+import "@fontsource-variable/space-grotesk";
+import "@fontsource-variable/jetbrains-mono";
 import "@/app/globals.css";
 import { Providers } from "./providers";
 
 export const metadata = {
-  title: "Inspectra AI — Autonomous Visual Inspection Platform",
+  title: {
+    default: "Inspectra AI — Vision Command OS",
+    template: "%s · Inspectra AI",
+  },
   description:
     "Inspectra AI: See the problem. Investigate the cause. Act before failure. Agentic computer vision for industrial equipment inspection.",
   icons: [{ rel: "icon", url: "/favicon.svg" }],
 };
-
-const geistSans = GeistSans;
-const geistMono = GeistMono;
 
 export default function RootLayout({
   children,
@@ -19,16 +21,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // No class here: next-themes owns the theme class on <html> and writes it
+    // with a blocking script. Hardcoding "dark" fought it and left the element
+    // reporting "system".
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      </head>
       <body
-        className={[geistSans.variable, geistMono.variable, geistSans.className].join(" ")}
-        style={{
-          fontFamily: "var(--font-geist-sans), Inter, system-ui, sans-serif",
-          fontVariantLigatures: "common-ligatures",
-        }}
+        className={`${GeistSans.variable} ${GeistMono.variable} bg-background text-primary-text`}
       >
         <Providers>{children}</Providers>
       </body>

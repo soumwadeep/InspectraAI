@@ -20,24 +20,12 @@ import { SystemHealthPanel } from "@/components/mission/system-health-panel";
 import { useAnalyticsOverview, useEquipment } from "@/lib/hooks";
 import { AgentActivityEntry, AnalyticsOverview } from "@/lib/api";
 import { cn, formatDurationMs, formatRelativeTime } from "@/lib/utils";
+import { entry, stagger } from "@/lib/motion/presets";
 import Link from "next/link";
 
 export default function OverviewPage() {
   const { data: analytics, isLoading: analyticsLoading } = useAnalyticsOverview();
   const { data: equipment, isLoading: equipmentLoading } = useEquipment();
-
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1, delayChildren: 0.1 },
-    },
-  };
-
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
-  };
 
   // Build metrics from analytics
   const metrics = analytics
@@ -103,12 +91,12 @@ export default function OverviewPage() {
       {/* Metrics Grid */}
       <motion.div
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
-        variants={container}
+        variants={stagger.rail}
         initial="hidden"
-        animate="show"
+        animate="visible"
       >
         {metrics.map((metric, i) => (
-          <motion.div key={metric.name} variants={item}>
+          <motion.div key={metric.name} variants={entry.boot}>
             <MetricCard
               title={metric.name}
               value={metric.value}

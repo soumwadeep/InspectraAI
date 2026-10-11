@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import {
   Cell,
   Pie,
@@ -7,7 +8,15 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "@/lib/recharts-wrapper";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import {
+  chartSeriesColors,
+  tooltipItemStyle,
+  tooltipLabelStyle,
+  tooltipStyle,
+  useIsMounted,
+} from "./chart-theme";
 
 interface DataItem {
   name: string;
@@ -21,33 +30,45 @@ interface PieChartProps {
   title?: string;
 }
 
-const defaultColors = ["#38BDF8", "#22D3EE", "#A78BFA", "#EC4899", "#10B981", "#F59E0B"];
-
 export function CustomPieChart({ data, className, title }: PieChartProps) {
+  // Gradient ids were previously `pie-${item.name}`, so two charts on one page
+  // could claim the same id and the second one silently borrowed the first's
+  // fill. useId scopes them per component instance.
+  const gradientRoot = useId().replace(/:/g, "");
+  const mounted = useIsMounted();
+
   const dataWithColors = data.map((item, i) => ({
     ...item,
-    color: item.color || defaultColors[i % defaultColors.length],
+    color: item.color || chartSeriesColors[i % chartSeriesColors.length],
   }));
 
+  if (!mounted) {
+    return <Skeleton className={cn("h-[240px] w-full", className)} />;
+  }
+
   return (
-    <ResponsiveContainer width="100%" height={240} className={cn("", className)}>
+    <ResponsiveContainer width="100%" height={240} className={cn(className)}>
       <PieChart>
         <defs>
           {dataWithColors.map((item) => (
-            <linearGradient key={item.name} id={`pie-${item.name}`} x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor={item.color} stopOpacity={0.8} />
-              <stop offset="100%" stopColor={item.color} stopOpacity={0.4} />
+            <linearGradient
+              key={item.name}
+              id={`pie-${gradientRoot}-${item.name}`}
+              x1="0"
+              y1="0"
+              x2="1"
+              y2="1"
+            >
+              <stop offset="0%" stopColor={item.color} stopOpacity={0.85} />
+              <stop offset="100%" stopColor={item.color} stopOpacity={0.45} />
             </linearGradient>
           ))}
         </defs>
+        {title ? <title>{title}</title> : null}
         <Tooltip
-          contentStyle={{
-            backgroundColor: "rgba(17, 24, 40, 0.9)",
-            border: "1px solid var(--border)",
-            borderRadius: "0.5rem",
-          }}
-          itemStyle={{ color: "var(--primary-text)", fontSize: "12px" }}
-          labelStyle={{ color: "var(--secondary-text)", fontSize: "12px" }}
+          contentStyle={tooltipStyle}
+          itemStyle={tooltipItemStyle}
+          labelStyle={tooltipLabelStyle}
         />
         <Pie
           data={dataWithColors}
@@ -55,15 +76,16 @@ export function CustomPieChart({ data, className, title }: PieChartProps) {
           nameKey="name"
           cx="50%"
           cy="50%"
-          outerRadius={70}
-          fill="url(#pie-data)"
+          outerRadius={78}
+          innerRadius={44}
           paddingAngle={2}
+          strokeWidth={0}
         >
           {dataWithColors.map((entry, index) => (
             <Cell
               key={`cell-${index}`}
-              fill={entry.color}
-              stroke="var(--background)"
+              fill={`url(#pie-${gradientRoot}-${entry.name})`}
+              stroke="rgb(var(--color-bg-void))"
               strokeWidth={2}
             />
           ))}

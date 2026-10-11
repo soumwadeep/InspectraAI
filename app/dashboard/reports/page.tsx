@@ -12,6 +12,7 @@ import {
   useTickets,
 } from "@/lib/hooks";
 import { downloadFile, exportTimestamp, toCsv, toJson } from "@/lib/export";
+import { entry, stagger } from "@/lib/motion/presets";
 import { useToast } from "@/components/ui/use-toast";
 
 interface Dataset {
@@ -23,16 +24,6 @@ interface Dataset {
   loading: boolean;
   error: boolean;
 }
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.08 } },
-};
-
-const item = {
-  hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0 },
-};
 
 export default function ReportsPage() {
   const { toast } = useToast();
@@ -180,12 +171,12 @@ export default function ReportsPage() {
 
       <motion.div
         className="grid grid-cols-1 gap-4 lg:grid-cols-2"
-        variants={container}
+        variants={stagger.rail}
         initial="hidden"
-        animate="show"
+        animate="visible"
       >
         {datasets.map((dataset) => (
-          <motion.div key={dataset.key} variants={item}>
+          <motion.div key={dataset.key} variants={entry.boot}>
             <Card>
               <CardHeader>
                 <CardTitle className="text-primary-text">{dataset.title}</CardTitle>

@@ -23,6 +23,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useSystemHealth } from "@/lib/hooks";
 import { useTheme } from "@/lib/theme-provider";
 import { formatDate } from "@/lib/utils";
+import { entry, stagger } from "@/lib/motion/presets";
 
 /**
  * Mirrors the fallback in `lib/api.ts`. `lib/api.ts` does not export its base
@@ -32,19 +33,6 @@ const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /** Copied from the error message in `components/mission/system-health-panel.tsx`. */
 const BACKEND_START_COMMAND = "python3 -m uvicorn app.main:app --port 8000";
-
-const container = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1, delayChildren: 0.1 },
-  },
-};
-
-const item = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
-};
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -150,12 +138,12 @@ export default function SettingsPage() {
 
       <motion.div
         className="grid grid-cols-1 gap-6 lg:grid-cols-2"
-        variants={container}
+        variants={stagger.sequence}
         initial="hidden"
-        animate="show"
+        animate="visible"
       >
         {/* Account — every field is one GET /api/auth/me response */}
-        <motion.div variants={item}>
+        <motion.div variants={entry.rise}>
           <Card>
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">
@@ -199,7 +187,7 @@ export default function SettingsPage() {
         </motion.div>
 
         {/* System health — live /health read */}
-        <motion.div variants={item}>
+        <motion.div variants={entry.rise}>
           <Card>
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">
@@ -247,7 +235,7 @@ export default function SettingsPage() {
         </motion.div>
 
         {/* API endpoint */}
-        <motion.div variants={item}>
+        <motion.div variants={entry.rise}>
           <Card>
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">
@@ -271,7 +259,7 @@ export default function SettingsPage() {
         </motion.div>
 
         {/* Appearance */}
-        <motion.div variants={item}>
+        <motion.div variants={entry.rise}>
           <Card>
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">
@@ -302,7 +290,7 @@ export default function SettingsPage() {
         </motion.div>
 
         {/* Sign out */}
-        <motion.div variants={item} className="lg:col-span-2">
+        <motion.div variants={entry.rise} className="lg:col-span-2">
           <Card>
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">
@@ -324,7 +312,7 @@ export default function SettingsPage() {
         </motion.div>
 
         {/* What is missing, stated plainly */}
-        <motion.div variants={item} className="lg:col-span-2">
+        <motion.div variants={entry.rise} className="lg:col-span-2">
           <Card className="border-border/50 bg-surface-elevated/30">
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">
