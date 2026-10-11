@@ -1,299 +1,235 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertTriangle, Download } from "@/components/icons";
 import {
-  FileText,
-  Download,
-  Upload,
-  Plus,
-  Calendar,
-  FileImage,
-  FileOutput,
-  CheckCircle,
-  Clock3,
-  RefreshCw,
-} from "@/components/icons";
-import { formatDate } from "@/lib/utils";
+  useEquipment,
+  useFindings,
+  useInspections,
+  useTickets,
+} from "@/lib/hooks";
+import { downloadFile, exportTimestamp, toCsv, toJson } from "@/lib/export";
+import { useToast } from "@/components/ui/use-toast";
 
-// Inline report data — migrate to API once reports endpoint is available
-const mockReports = [
-  {
-    id: "rep_001",
-    title: "Q4 2025 Equipment Inspection Summary",
-    type: "PDF" as const,
-    status: "ready" as const,
-    generatedAt: "2025-10-08T12:00:00Z",
-    generatedBy: "Alex Chen",
-    itemCount: 12,
-    fileSize: "4.2 MB",
-  },
-  {
-    id: "rep_002",
-    title: "Findings Export - October 2025",
-    type: "CSV" as const,
-    status: "ready" as const,
-    generatedAt: "2025-10-07T18:30:00Z",
-    generatedBy: "Sarah Kim",
-    itemCount: 47,
-    fileSize: "2.1 MB",
-  },
-  {
-    id: "rep_003",
-    title: "Agent Performance Report",
-    type: "JSON" as const,
-    status: "processing" as const,
-    generatedAt: "2025-10-08T14:00:00Z",
-    generatedBy: "System",
-    itemCount: 0,
-    fileSize: "-",
-  },
-];
+interface Dataset {
+  key: string;
+  title: string;
+  description: string;
+  rows: readonly unknown[];
+  columns: string[];
+  loading: boolean;
+  error: boolean;
+}
 
-const reportTypeIcons = {
-  PDF: <FileImage className="h-5 w-5 text-critical" />,
-  CSV: <FileOutput className="h-5 w-5 text-success" />,
-  JSON: <FileText className="h-5 w-5 text-primary" />,
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.08 } },
 };
 
-const reportTypeColors = {
-  PDF: "critical",
-  CSV: "success",
-  JSON: "info",
-} as const;
-
-const statusVariant = {
-  ready: "success",
-  processing: "info",
-  failed: "critical",
-} as const;
-
-const statusDot = {
-  ready: "bg-success",
-  processing: "bg-primary",
-  failed: "bg-critical",
-} as const;
+const item = {
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0 },
+};
 
 export default function ReportsPage() {
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1, delayChildren: 0.1 },
+  const { toast } = useToast();
+  const findings = useFindings();
+  const tickets = useTickets();
+  const inspections = useInspections();
+  const equipment = useEquipment();
+
+  const stamp = exportTimestamp();
+
+  const datasets: Dataset[] = [
+    {
+      key: "findings",
+      title: "Findings",
+      description: "Every detected anomaly with severity, confidence and review state.",
+      rows: findings.data ?? [],
+      columns: [
+        "id",
+        "equipmentId",
+        "inspectionId",
+        "category",
+        "severity",
+        "confidence",
+        "verificationStatus",
+        "resolutionState",
+        "description",
+        "createdAt",
+      ],
+      loading: findings.isLoading,
+      error: findings.isError,
     },
-  };
+    {
+      key: "tickets",
+      title: "Maintenance tickets",
+      description: "Assigned work, priority and repair-verification outcome.",
+      rows: tickets.data ?? [],
+      columns: [
+        "id",
+        "equipmentId",
+        "findingId",
+        "priority",
+        "status",
+        "assignedOperator",
+        "dueDate",
+        "repairVerification",
+        "description",
+        "createdAt",
+      ],
+      loading: tickets.isLoading,
+      error: tickets.isError,
+    },
+    {
+      key: "inspections",
+      title: "Inspections",
+      description: "Runs with their agent-run link, status and duration.",
+      rows: inspections.data ?? [],
+      columns: [
+        "id",
+        "equipmentId",
+        "inspectorId",
+        "status",
+        "startTime",
+        "endTime",
+        "duration",
+        "agentRunId",
+      ],
+      loading: inspections.isLoading,
+      error: inspections.isError,
+    },
+    {
+      key: "equipment",
+      title: "Equipment registry",
+      description: "Registered assets with location, status and open-finding counts.",
+      rows: equipment.data ?? [],
+      columns: [
+        "id",
+        "name",
+        "category",
+        "location",
+        "status",
+        "openFindings",
+        "serialNumber",
+        "manufacturer",
+      ],
+      loading: equipment.isLoading,
+      error: equipment.isError,
+    },
+  ];
 
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
-  };
+  function exportDataset(dataset: Dataset, format: "csv" | "json") {
+    if (dataset.rows.length === 0) {
+      toast({
+        title: "Nothing to export",
+        description: `${dataset.title} has no records yet. Run an inspection first.`,
+        variant: "default",
+      });
+      return;
+    }
 
-  const readyCount = mockReports.filter((r) => r.status === "ready").length;
-  const processingCount = mockReports.filter((r) => r.status === "processing").length;
+    if (format === "csv") {
+      downloadFile(
+        `inspectra-${dataset.key}-${stamp}.csv`,
+        toCsv(dataset.rows, dataset.columns),
+        "text/csv",
+      );
+    } else {
+      downloadFile(
+        `inspectra-${dataset.key}-${stamp}.json`,
+        toJson(dataset.rows, { columns: dataset.columns }),
+        "application/json",
+      );
+    }
+
+    toast({
+      title: `${dataset.title} exported`,
+      description: `${dataset.rows.length} record(s) written as ${format.toUpperCase()}.`,
+    });
+  }
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-title font-bold text-primary-text">Data export</h1>
+        <p className="mt-1 text-secondary-text">
+          Files are generated from the records currently stored for your
+          organization. Counts below are the rows that will be written.
+        </p>
+      </div>
+
       <motion.div
-        initial={{ opacity: 0, y: -20 }}
+        className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 p-4"
+        initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-display font-bold text-gradient-hero">
-              Reports &amp; Exports
-            </h1>
-            <p className="mt-1 text-secondary-text">
-              Generate and download inspection reports, findings exports, and compliance documents
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              <Calendar className="h-4 w-4 mr-2" />
-              This Month
-            </Button>
-            <Button size="sm">
-              <Plus className="h-4 w-4 mr-2" />
-              Generate Report
-            </Button>
-          </div>
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+        <div className="text-sm">
+          <p className="font-medium text-primary-text">Not implemented</p>
+          <p className="text-secondary-text">
+            PDF inspection reports and a server-side export endpoint do not
+            exist yet. CSV and JSON here are assembled in the browser from live
+            API data, so an export reflects exactly what you can see on screen.
+          </p>
         </div>
       </motion.div>
 
-      {/* Summary Cards */}
       <motion.div
-        className="grid grid-cols-1 gap-4 sm:grid-cols-4"
+        className="grid grid-cols-1 gap-4 lg:grid-cols-2"
         variants={container}
         initial="hidden"
         animate="show"
       >
-        <motion.div variants={item}>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-3xl font-bold text-primary-text">{mockReports.length}</div>
-              <p className="text-sm text-secondary-text">Total Reports</p>
-            </CardContent>
-          </Card>
-        </motion.div>
-        <motion.div variants={item}>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-3xl font-bold text-success">{readyCount}</div>
-              <p className="text-sm text-secondary-text">Ready</p>
-            </CardContent>
-          </Card>
-        </motion.div>
-        <motion.div variants={item}>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-3xl font-bold text-primary">{processingCount}</div>
-              <p className="text-sm text-secondary-text">Processing</p>
-            </CardContent>
-          </Card>
-        </motion.div>
-        <motion.div variants={item}>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-3xl font-bold text-secondary-text">4.2 MB</div>
-              <p className="text-sm text-secondary-text">Total Storage</p>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </motion.div>
-
-      {/* Reports Grid */}
-      <motion.div
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-      >
-        {mockReports.map((report, i) => (
-          <motion.div
-            key={report.id}
-            variants={item}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 + i * 0.05 }}
-          >
-            <Card className="group transition-all duration-300 hover:border-primary/30">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    {reportTypeIcons[report.type]}
-                    <div>
-                      <CardTitle className="text-primary-text">{report.title}</CardTitle>
-                      <CardDescription className="mt-1">
-                        {report.type} • Generated by {report.generatedBy}
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <Badge variant={reportTypeColors[report.type]}>
-                    {report.type}
-                  </Badge>
-                </div>
+        {datasets.map((dataset) => (
+          <motion.div key={dataset.key} variants={item}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-primary-text">{dataset.title}</CardTitle>
+                <p className="text-sm text-secondary-text">{dataset.description}</p>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-secondary-text">Generated</span>
-                    <span className="text-primary-text">{formatDate(report.generatedAt)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-secondary-text">Items</span>
-                    <span className="text-primary-text">{report.itemCount} records</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-secondary-text">File Size</span>
-                    <span className="text-primary-text">{report.fileSize}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={statusDot[report.status]} className="h-2 w-2 rounded-full animate-pulse" />
-                      <span className="text-xs text-secondary-text">
-                        {report.status === "ready" ? "Ready for download" : "Generating..."}
-                      </span>
+                {dataset.loading ? (
+                  <Skeleton className="h-16 w-full" />
+                ) : dataset.error ? (
+                  <p className="text-sm text-critical">
+                    Could not load {dataset.title.toLowerCase()}. The API may not be
+                    running.
+                  </p>
+                ) : (
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="font-mono text-sm tabular-nums text-secondary-text">
+                      {dataset.rows.length} record{dataset.rows.length === 1 ? "" : "s"}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => exportDataset(dataset, "csv")}
+                        disabled={dataset.rows.length === 0}
+                      >
+                        <Download className="mr-1.5 h-3.5 w-3.5" />
+                        CSV
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => exportDataset(dataset, "json")}
+                        disabled={dataset.rows.length === 0}
+                      >
+                        <Download className="mr-1.5 h-3.5 w-3.5" />
+                        JSON
+                      </Button>
                     </div>
-                    {report.status === "ready" ? (
-                      <Button size="sm" className="opacity-0 transition-opacity group-hover:opacity-100">
-                        <Download className="h-4 w-4 mr-2" />
-                        Download
-                      </Button>
-                    ) : (
-                      <Button variant="outline" size="sm" disabled>
-                        <Clock3 className="h-4 w-4 mr-2 animate-spin" />
-                        {report.status}
-                      </Button>
-                    )}
                   </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </motion.div>
         ))}
-      </motion.div>
-
-      {/* Report Templates */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-primary-text">Report Templates</CardTitle>
-            <CardDescription>
-              Pre-configured report formats for compliance and stakeholder needs
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <motion.div
-                className="glass rounded-lg p-4 text-center transition-all duration-300 hover:border-primary/30 hover:bg-surface-elevated/50"
-                whileHover={{ scale: 1.02 }}
-              >
-                <FileImage className="mx-auto h-10 w-10 text-critical" />
-                <h3 className="mt-3 font-medium text-primary-text">Inspection Summary</h3>
-                <p className="mt-1 text-xs text-secondary-text">
-                  Full equipment inspection report with findings and recommendations
-                </p>
-                <Button size="sm" className="mt-3 w-full">
-                  Generate
-                </Button>
-              </motion.div>
-
-              <motion.div
-                className="glass rounded-lg p-4 text-center transition-all duration-300 hover:border-primary/30 hover:bg-surface-elevated/50"
-                whileHover={{ scale: 1.02 }}
-              >
-                <FileOutput className="mx-auto h-10 w-10 text-success" />
-                <h3 className="mt-3 font-medium text-primary-text">Findings Export</h3>
-                <p className="mt-1 text-xs text-secondary-text">
-                  CSV export of all findings with metadata for analysis
-                </p>
-                <Button size="sm" className="mt-3 w-full">
-                  Generate
-                </Button>
-              </motion.div>
-
-              <motion.div
-                className="glass rounded-lg p-4 text-center transition-all duration-300 hover:border-primary/30 hover:bg-surface-elevated/50"
-                whileHover={{ scale: 1.02 }}
-              >
-                <FileText className="mx-auto h-10 w-10 text-primary" />
-                <h3 className="mt-3 font-medium text-primary-text">Compliance Report</h3>
-                <p className="mt-1 text-xs text-secondary-text">
-                  JSON export for system integration and compliance auditing
-                </p>
-                <Button size="sm" className="mt-3 w-full">
-                  Generate
-                </Button>
-              </motion.div>
-            </div>
-          </CardContent>
-        </Card>
       </motion.div>
     </div>
   );

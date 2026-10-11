@@ -7,6 +7,9 @@ from typing import Optional
 import cv2
 import numpy as np
 
+from app.vision.classification import classify_region
+from app.vision.ssim import compute_ssim as ssim_compute
+
 
 @dataclass
 class ChangedRegion:
@@ -38,6 +41,7 @@ class ChangeDetectionResult:
     mean_abs_diff: float
     change_fraction: float
     reason: str = ""
+    ssim_map: Optional[np.ndarray] = None
 
 
 @dataclass
@@ -58,27 +62,21 @@ class ChangeDetector:
 
     @staticmethod
     def compute_ssim(img1: np.ndarray, img2: np.ndarray) -> float:
-        """Compute Structural Similarity Index using OpenCV 5's quality module."""
-        if len(img1.shape) == 3:
-            gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-            gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-        else:
-            gray1, gray2 = img1, img2
+        """Structural similarity, delegating to the numpy/OpenCV implementation.
 
-        # Ensure same size
-        if gray1.shape != gray2.shape:
-            gray2 = cv2.resize(gray2, (gray1.shape[1], gray1.shape[0]))
+        This used to call ``cv2.quality_QualitySSIM_create`` inside a bare
+        ``except Exception`` that fell back to ``matchTemplate(TM_CCOEFF_NORMED)``.
+        That module is not in opencv-python-headless, so the fallback always ran
+        and whole-image cross-correlation was reported as ``ssim_score`` — a number
+        the maintenance threshold was compared against. There is no fallback now.
+        """
+        score, _ = ssim_compute(img1, img2)
+        return score
 
-        # Use OpenCV quality module for SSIM
-        try:
-            quality = cv2.quality_QualitySSIM_create(gray1)
-            ssim_score, ssim_map = quality.compute(gray2)
-            return float(ssim_score)
-        except Exception:
-            # Fallback: manual SSIM
-            return float(cv2.matchTemplate(
-                gray1.astype(np.float32), gray2.astype(np.float32), cv2.TM_CCOEFF_NORMED
-            )[0][0])
+    @staticmethod
+    def compute_ssim_map(img1: np.ndarray, img2: np.ndarray) -> tuple[float, np.ndarray]:
+        """Mean similarity plus the per-pixel map, for localised evidence."""
+        return ssim_compute(img1, img2)
 
     def detect(
         self,
@@ -119,8 +117,22 @@ class ChangeDetector:
         if aligned_gray.shape != ref_gray.shape:
             aligned_gray = cv2.resize(aligned_gray, (w_ref, h_ref))
 
+        # Colour copies at reference resolution, for region classification.
+        ref_color = (
+            reference if reference.ndim == 3
+            else cv2.cvtColor(reference, cv2.COLOR_GRAY2BGR)
+        )
+        cur_color = (
+            aligned if aligned.ndim == 3
+            else cv2.cvtColor(aligned, cv2.COLOR_GRAY2BGR)
+        )
+        if cur_color.shape[:2] != (h_ref, w_ref):
+            cur_color = cv2.resize(cur_color, (w_ref, h_ref))
+        if ref_color.shape[:2] != (h_ref, w_ref):
+            ref_color = cv2.resize(ref_color, (w_ref, h_ref))
+
         # Compute SSIM
-        ssim_score = self.compute_ssim(ref_gray, aligned_gray)
+        ssim_score, ssim_map = self.compute_ssim_map(ref_gray, aligned_gray)
 
         # Absolute difference
         diff = cv2.absdiff(ref_gray, aligned_gray)
@@ -182,6 +194,10 @@ class ChangeDetector:
             # Confidence based on area and intensity
             confidence = min(1.0, area / 5000.0) * min(1.0, mean_intensity / 100.0)
 
+            classification = classify_region(
+                ref_color, cur_color, x, y, w, h, region_mask=mask_roi
+            )
+
             regions.append(ChangedRegion(
                 bbox_x=x / w_ref,
                 bbox_y=y / h_ref,
@@ -191,6 +207,8 @@ class ChangeDetector:
                 mean_intensity=mean_intensity,
                 confidence=confidence,
                 description=f"Change region {len(regions) + 1}: {area}px at ({x}, {y})",
+                category=classification.category,
+                details_json=classification.details,
             ))
 
         change_fraction = total_area / (h_ref * w_ref) if h_ref * w_ref > 0 else 0.0
@@ -208,4 +226,5 @@ class ChangeDetector:
             mean_abs_diff=mean_abs_diff,
             change_fraction=change_fraction,
             reason=reason,
+            ssim_map=ssim_map,
         )

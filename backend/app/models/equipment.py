@@ -4,7 +4,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, uuid_gen, value_enum
@@ -77,6 +77,12 @@ class EquipmentReferenceImage(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     s3_key: Mapped[str] = mapped_column(String(512), nullable=True)
+    # Measured on upload. The viewport needs real dimensions to reserve the right
+    # aspect ratio before the image loads; this table previously had no such
+    # column, and the endpoint assigned a nonexistent `metadata_json` attribute
+    # that SQLAlchemy accepted on the instance and then silently dropped.
+    width: Mapped[int] = mapped_column(Integer, nullable=True)
+    height: Mapped[int] = mapped_column(Integer, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )

@@ -44,6 +44,8 @@ class EquipmentReferenceImageRead(BaseModel):
     filename: str
     storage_path: str
     s3_key: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
     uploaded_at: datetime
 
     model_config = {"from_attributes": True}

@@ -8,8 +8,6 @@ type ToastProps = {
   variant?: "default" | "destructive";
 };
 
-let toastFn = sonnerToast;
-
 export function useToast() {
   return {
     toast: ({ title, description, variant }: ToastProps) => {

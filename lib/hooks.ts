@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, AnalyticsOverview } from "./api";
+import { api, AnalyticsOverview, SystemHealth } from "./api";
 import { Equipment, Finding, MaintenanceTicket, Inspection, AgentRun, BenchmarkRun } from "./types";
 
 // ---- Equipment hooks ----
@@ -167,6 +167,19 @@ export function useBenchmark(id: string) {
 }
 
 // ---- Analytics hooks ----
+
+/**
+ * Live process state from `/health`. Polls because a demo audience watches this
+ * panel change while an inspection runs.
+ */
+export function useSystemHealth() {
+  return useQuery<SystemHealth, Error>({
+    queryKey: ["system-health"],
+    queryFn: () => api.health(),
+    staleTime: 10 * 1000,
+    refetchInterval: 15 * 1000,
+  });
+}
 
 export function useAnalyticsOverview(days: number = 30) {
   return useQuery<AnalyticsOverview, Error>({

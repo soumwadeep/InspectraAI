@@ -168,17 +168,23 @@ async def upload_reference_image(
     db.commit()
     db.refresh(ref_img)
 
-    # Load and get image dimensions
+    # Record the measured dimensions on the row that was just inserted.
     from PIL import Image
+
     full_path = StorageService.get_image_path(rel_path)
     if full_path:
         with Image.open(str(full_path)) as img:
-            ref_img_ref = db.query(EquipmentReferenceImage).get(ref_img.id)
-            # Store dims in metadata
-            ref_img_ref.metadata_json = {"width": img.width, "height": img.height}
-            db.commit()
+            ref_img.width, ref_img.height = img.width, img.height
+        db.commit()
+        db.refresh(ref_img)
 
-    return {"message": "Reference image uploaded", "id": ref_img.id, "path": rel_path}
+    return {
+        "message": "Reference image uploaded",
+        "id": ref_img.id,
+        "path": rel_path,
+        "width": ref_img.width,
+        "height": ref_img.height,
+    }
 
 
 @router.get("/{equipment_id}/status", response_model=dict)

@@ -6,7 +6,7 @@ the check could not run here; it never means "probably fine".
 | Phase | Objective | Status | Verified how |
 | --- | --- | --- | --- |
 | 0 | Make the existing app start and establish a tested baseline | **VERIFIED (partial)** | live HTTP calls against uvicorn on SQLite |
-| 1 | Build green; remove every fabricated value | pending | `tsc --noEmit`, `next build`, grep for mock data |
+| 1 | Build green; remove every fabricated value | **VERIFIED** | `tsc` 0 errors, `eslint` 0 errors, `next build` 18/18 pages, full inspection driven in browser with 0 console errors |
 | 2 | Vision Command OS design tokens + motion system | pending | browser at `next dev`, `next build` |
 | 3 | Real OpenCV depth + genuine agentic loop | pending | pytest + agent trace inspection |
 | 4 | Seed real data; build console + VisionViewport | pending | browser, evidence PNGs decoded from disk |

@@ -2,12 +2,23 @@ import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 
+/**
+ * A styled native <select>.
+ *
+ * This file previously also exported SelectTrigger / SelectValue / SelectContent
+ * / SelectItem to mimic the Radix API, but they were aliases over the same
+ * native element: SelectTrigger was `Select` itself (so usage nested a <select>
+ * inside a <select>, which browsers reject), SelectValue returned null and
+ * discarded the displayed selection, and SelectContent just returned its
+ * children. Real Radix select is not installed and one call site did not
+ * justify adding it.
+ */
 const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
   ({ className, children, ...props }, ref) => (
     <div className="relative">
       <select
         className={cn(
-          "w-full cursor-pointer appearance-none rounded-lg border bg-surface/50 px-3 py-2 text-sm text-primary-text placeholder:text-secondary-text focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background",
+          "w-full cursor-pointer appearance-none rounded-lg border bg-surface/50 px-3 py-2 pr-9 text-sm text-primary-text placeholder:text-secondary-text focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background",
           className
         )}
         ref={ref}
@@ -21,13 +32,4 @@ const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSele
 );
 Select.displayName = "Select";
 
-const SelectTrigger = Select;
-const SelectValue = ({ placeholder }: { placeholder?: string }) => null;
-const SelectContent = ({ children }: { children: React.ReactNode }) => children;
-const SelectItem = ({ children, ...props }: React.HTMLAttributes<HTMLOptionElement> & { value: string }) => (
-  <option {...props}>{children}</option>
-);
-const SelectLabel = ({ children }: { children: React.ReactNode }) => children;
-const SelectSeparator = () => <option disabled hidden>───</option>;
-
-export { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectLabel, SelectSeparator };
+export { Select };

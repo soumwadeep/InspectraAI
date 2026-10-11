@@ -1,16 +1,17 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/ui/data-table";
+import { ExportButton } from "@/components/mission/export-button";
 import { StatusDot } from "@/components/ui/status-dot";
 import { useInspections, useEquipment } from "@/lib/hooks";
 import { Inspection, Equipment } from "@/lib/types";
-import { formatDate, formatRelativeTime } from "@/lib/utils";
+import { formatDate, formatDurationMs, formatRelativeTime } from "@/lib/utils";
 import { ColumnDef } from "@tanstack/react-table";
 import {
   Eye,
@@ -18,9 +19,6 @@ import {
   AlertTriangle,
   Clock3,
   CheckCircle,
-  Filter,
-  Download,
-  Calendar,
 } from "@/components/icons";
 import Link from "next/link";
 
@@ -94,15 +92,12 @@ function buildColumns(equipmentMap: Map<string, Equipment>): ColumnDef<Inspectio
     {
       accessorKey: "duration",
       header: "Duration",
-      cell: ({ row }) => {
-        const d = row.getValue("duration") as number | undefined;
-        if (!d) return <span className="text-sm text-secondary-text">—</span>;
-        return (
-          <span className="text-sm text-secondary-text">
-            {Math.floor(d / 60)}m {d % 60}s
-          </span>
-        );
-      },
+      cell: ({ row }) => (
+        // duration is milliseconds; see formatDurationMs for why that matters here.
+        <span className="font-mono text-sm text-secondary-text tabular-nums">
+          {formatDurationMs(row.getValue("duration") as number | undefined)}
+        </span>
+      ),
     },
     {
       accessorKey: "findings",
@@ -126,7 +121,7 @@ function buildColumns(equipmentMap: Map<string, Equipment>): ColumnDef<Inspectio
       ),
     },
     {
-      accessorKey: "startTime",
+      accessorKey: "endTime",
       header: "Completed",
       cell: ({ row }) => {
         const endTime = row.getValue("endTime") as string | undefined;
@@ -165,7 +160,6 @@ function buildColumns(equipmentMap: Map<string, Equipment>): ColumnDef<Inspectio
 }
 
 export default function HistoryPage() {
-  const [filterOpen, setFilterOpen] = useState(false);
   const { data: inspections = [], isLoading: inspectionsLoading } = useInspections();
   const { data: equipment = [], isLoading: equipmentLoading } = useEquipment();
 
@@ -195,18 +189,20 @@ export default function HistoryPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            <Calendar className="h-4 w-4 mr-2" />
-            Last 30 days
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setFilterOpen(!filterOpen)}>
-            <Filter className="h-4 w-4 mr-2" />
-            Filter
-          </Button>
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
+          <ExportButton
+            rows={inspections}
+            columns={[
+              "id",
+              "equipmentId",
+              "inspectorId",
+              "status",
+              "startTime",
+              "endTime",
+              "duration",
+              "agentRunId",
+            ]}
+            name="inspections"
+          />
         </div>
       </div>
 

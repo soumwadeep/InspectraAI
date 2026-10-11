@@ -33,6 +33,33 @@ export function clearToken(): void {
 
 // ---------- Typed API responses (snake_case from backend) ----------
 
+/** Mirrors `app/api/analytics.py::_system_health`. */
+export interface SystemHealthSnapshot {
+  database: boolean;
+  opencv: string;
+  redis: boolean;
+  processing_mode: string;
+}
+
+/** Mirrors the `priority_findings` rows built in analytics.py. */
+export interface PriorityFinding {
+  id: string;
+  category: string;
+  severity: string;
+  equipment_id: string;
+  created_at: string;
+}
+
+/** Mirrors the `agent_activity_feed` rows built in analytics.py. */
+export interface AgentActivityEntry {
+  run_id: string;
+  equipment: string;
+  status: string;
+  iterations: number;
+  budget_used: number;
+  started_at: string | null;
+}
+
 export interface AnalyticsOverview {
   total_equipment: number;
   total_inspections: number;
@@ -44,9 +71,9 @@ export interface AnalyticsOverview {
   inspection_activity_trend: Array<{ date: string; count: number }>;
   finding_categories: Record<string, number>;
   equipment_status: Record<string, number>;
-  priority_findings: Array<Record<string, unknown>>;
-  agent_activity_feed: Array<Record<string, unknown>>;
-  system_health: Record<string, unknown>;
+  priority_findings: PriorityFinding[];
+  agent_activity_feed: AgentActivityEntry[];
+  system_health: SystemHealthSnapshot;
 }
 
 interface BackendUser {
@@ -72,6 +99,17 @@ interface RegisterRequest {
   organization_name: string;
 }
 
+interface BackendEquipmentReferenceImage {
+  id: string;
+  equipment_id: string;
+  filename: string;
+  storage_path: string;
+  s3_key?: string | null;
+  width?: number | null;
+  height?: number | null;
+  uploaded_at: string;
+}
+
 interface BackendEquipment {
   id: string;
   name: string;
@@ -88,7 +126,8 @@ interface BackendEquipment {
   status: string;
   is_archived: boolean;
   open_findings: number;
-  last_inspection?: string;
+  last_inspection?: Record<string, unknown> | null;
+  reference_images?: BackendEquipmentReferenceImage[];
   created_at: string;
   updated_at: string;
 }
@@ -222,6 +261,41 @@ function toCamel<T>(obj: unknown): T {
   return result as T;
 }
 
+/** Wire shape of `schemas/inspection.py::InspectionRead`. */
+interface BackendInspection {
+  id: string;
+  equipment_id: string;
+  organization_id: string;
+  inspector_id: string;
+  status: string;
+  started_at: string;
+  ended_at?: string | null;
+  duration_ms: number;
+  agent_run_id?: string | null;
+  findings: string[];
+}
+
+/**
+ * Explicit, because this endpoint used to be handed to the generic `toCamel`
+ * helper. That produced `startedAt`/`durationMs` while `Inspection` declares
+ * `startTime`/`duration`, so every history and equipment-detail table silently
+ * rendered blank cells that looked like an empty database rather than a mismatch.
+ */
+export function adaptInspection(i: BackendInspection): Inspection {
+  return {
+    id: i.id,
+    equipmentId: i.equipment_id,
+    organizationId: i.organization_id,
+    inspectorId: i.inspector_id,
+    startTime: i.started_at,
+    endTime: i.ended_at ?? undefined,
+    status: i.status as Inspection["status"],
+    findings: i.findings ?? [],
+    duration: i.duration_ms,
+    agentRunId: i.agent_run_id ?? undefined,
+  };
+}
+
 export function adaptEquipment(eq: BackendEquipment): Equipment {
   return {
     id: eq.id,
@@ -233,12 +307,22 @@ export function adaptEquipment(eq: BackendEquipment): Equipment {
     model: eq.model,
     serialNumber: eq.serial_number,
     installationDate: eq.installation_date,
-    inspectionSchedule: eq.inspection_schedule ?? "Monthly",
-    assignedInspector: "",
+    inspectionSchedule: eq.inspection_schedule ?? "Not scheduled",
+    assignedInspector: eq.assigned_inspector_id ?? "",
     status: eq.status as Equipment["status"],
     openFindings: eq.open_findings,
-    lastInspection: eq.last_inspection,
-    referenceImages: [],
+    lastInspection: eq.last_inspection ?? undefined,
+    // The backend returns reference images on every equipment read. This adapter
+    // used to hardcode an empty array, so the detail page always rendered
+    // placeholder icons and no inspection could find its reference.
+    referenceImages: (eq.reference_images ?? []).map((image) => ({
+      id: image.id,
+      filename: image.filename,
+      storagePath: image.storage_path,
+      width: image.width ?? null,
+      height: image.height ?? null,
+      uploadedAt: image.uploaded_at,
+    })),
   };
 }
 
@@ -374,9 +458,16 @@ export class ApiError extends Error {
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
+
+  // Setting Content-Type on a FormData body overrides the multipart boundary the
+  // browser generates, and FastAPI then answers 422 "field required" for every
+  // upload. Only JSON bodies get the header.
+  const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!isForm && options.body !== undefined) {
+    if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  }
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -392,13 +483,48 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       const err = await res.json();
       detail = err.detail || JSON.stringify(err);
     } catch {
-      // use default message
+      detail = res.statusText || detail;
     }
     throw new ApiError(detail, res.status);
   }
 
   if (res.status === 204) return null as T;
   return res.json() as Promise<T>;
+}
+
+/**
+ * `/storage` is mounted on `backend/storage/uploads` while stored paths begin with
+ * `uploads/`, so the prefix has to be dropped to build a loadable URL.
+ */
+export function storageUrl(storagePath: string): string {
+  const relative = storagePath
+    .replace(/^\.?\/?storage\//, "")
+    .replace(/^uploads\//, "");
+  return `${API_URL}/storage/${relative}`;
+}
+
+const blobUrlCache = new Map<string, string>();
+
+/**
+ * Loads an authenticated binary response as an object URL.
+ *
+ * Evidence images come back from `GET /api/findings/{id}/evidence/{eid}`, which
+ * requires an Authorization header — and an <img> element cannot send one, so the
+ * bytes have to be fetched and turned into a blob URL.
+ */
+export async function fetchBlobUrl(path: string): Promise<string> {
+  const cached = blobUrlCache.get(path);
+  if (cached) return cached;
+
+  const token = getToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new ApiError(`Could not load ${path}`, res.status);
+
+  const url = URL.createObjectURL(await res.blob());
+  blobUrlCache.set(path, url);
+  return url;
 }
 
 // ---------- Auth API ----------
@@ -462,6 +588,37 @@ export const api = {
     status: async (id: string): Promise<Record<string, unknown>> => {
       return request<Record<string, unknown>>(`/api/equipment/${id}/status`);
     },
+    create: async (data: {
+      name: string;
+      category: string;
+      location: string;
+      description?: string;
+      manufacturer?: string;
+      model?: string;
+      serialNumber?: string;
+    }): Promise<Equipment> => {
+      const res = await request<BackendEquipment>("/api/equipment", {
+        method: "POST",
+        body: JSON.stringify({
+          name: data.name,
+          category: data.category,
+          location: data.location,
+          description: data.description,
+          manufacturer: data.manufacturer,
+          model: data.model,
+          serial_number: data.serialNumber,
+        }),
+      });
+      return adaptEquipment(res);
+    },
+    uploadReferenceImage: async (id: string, file: File): Promise<Record<string, unknown>> => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<Record<string, unknown>>(`/api/equipment/${id}/reference-image`, {
+        method: "POST",
+        body: form,
+      });
+    },
   },
 
   // ---------- Findings API ----------
@@ -497,22 +654,30 @@ export const api = {
   inspections: {
     list: async (status?: string): Promise<Inspection[]> => {
       const query = status ? `?status=${encodeURIComponent(status)}` : "";
-      const res = await request<Inspection[]>(`/api/inspections${query}`);
-      return toCamel(res);
+      const res = await request<BackendInspection[]>(`/api/inspections${query}`);
+      return res.map(adaptInspection);
     },
     get: async (id: string): Promise<Record<string, unknown>> => {
       return request<Record<string, unknown>>(`/api/inspections/${id}`);
     },
     create: async (equipmentId: string): Promise<Inspection> => {
-      const res = await request<Inspection>("/api/inspections", {
+      const res = await request<BackendInspection>("/api/inspections", {
         method: "POST",
         body: JSON.stringify({ equipment_id: equipmentId }),
       });
-      return toCamel(res);
+      return adaptInspection(res);
     },
     run: async (id: string): Promise<Record<string, unknown>> => {
       return request<Record<string, unknown>>(`/api/inspections/${id}/run`, {
         method: "POST",
+      });
+    },
+    uploadInput: async (id: string, file: File): Promise<Record<string, unknown>> => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<Record<string, unknown>>(`/api/inspections/${id}/upload`, {
+        method: "POST",
+        body: form,
       });
     },
   },
@@ -580,10 +745,138 @@ export const api = {
     },
   },
 
-  health: async (): Promise<Record<string, unknown>> => {
-    return request<Record<string, unknown>>("/health");
+  /**
+   * Direct OpenCV calls. These endpoints existed on the backend from the start
+   * but nothing in the UI could reach them, because `request` always sent
+   * `Content-Type: application/json` and multipart uploads therefore failed.
+   */
+  vision: {
+    quality: async (file: File): Promise<VisionQualityResult> => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<VisionQualityResult>("/api/vision/quality", {
+        method: "POST",
+        body: form,
+      });
+    },
+    align: async (reference: File, image: File): Promise<VisionAlignment> => {
+      const form = new FormData();
+      form.append("reference", reference);
+      form.append("image", image);
+      return request<VisionAlignment>("/api/vision/align", { method: "POST", body: form });
+    },
+    compare: async (
+      reference: File,
+      image: File,
+      diffThreshold?: number,
+    ): Promise<VisionChangeDetection> => {
+      const form = new FormData();
+      form.append("reference", reference);
+      form.append("image", image);
+      const query =
+        diffThreshold === undefined ? "" : `?diff_threshold=${encodeURIComponent(diffThreshold)}`;
+      return request<VisionChangeDetection>(`/api/vision/compare${query}`, {
+        method: "POST",
+        body: form,
+      });
+    },
+    inspect: async (reference: File, image: File): Promise<VisionInspectResult> => {
+      const form = new FormData();
+      form.append("reference", reference);
+      form.append("image", image);
+      return request<VisionInspectResult>("/api/vision/inspect", {
+        method: "POST",
+        body: form,
+      });
+    },
+  },
+
+  /**
+   * Live process state. Typed rather than a loose record because the System
+   * Health panel used to render hardcoded values under this label.
+   */
+  health: async (): Promise<SystemHealth> => {
+    return request<SystemHealth>("/health");
   },
 };
+
+export interface VisionQuality {
+  blur_score: number;
+  exposure_score: number;
+  glare_estimate: number;
+  image_coverage: number;
+  inspection_suitability: "sufficient" | "insufficient";
+  reasons: string[];
+  brightness_mean?: number;
+  brightness_std?: number;
+  saturation_mean?: number;
+  edge_density?: number;
+  resolution?: [number, number];
+}
+
+export interface VisionQualityResult {
+  quality: VisionQuality;
+}
+
+export interface VisionAlignment {
+  status: string;
+  matched_keypoints: number;
+  inlier_ratio: number;
+  reprojection_error: number;
+  confidence: number;
+  reason: string;
+  /** base64 PNG, present when alignment succeeded. */
+  aligned_image?: string;
+}
+
+/** bbox coordinates are relative 0-1 of the reference frame. */
+export interface VisionRegion {
+  bbox: [number, number, number, number];
+  area_px: number;
+  confidence: number;
+  mean_intensity: number;
+  description: string;
+}
+
+export interface VisionChangeDetection {
+  status: string;
+  num_changed_regions: number;
+  total_changed_area: number;
+  ssim_score: number;
+  mean_abs_diff: number;
+  change_fraction: number;
+  regions: VisionRegion[];
+}
+
+export interface VisionAnomaly {
+  severity: string;
+  category: string;
+  description: string;
+  confidence: number;
+  bbox: { x: number; y: number; width: number; height: number };
+}
+
+export interface VisionInspectResult {
+  quality: VisionQuality;
+  alignment: VisionAlignment;
+  change_detection: VisionChangeDetection;
+  detections: unknown[];
+  anomalies: VisionAnomaly[];
+  recommendations: string[];
+  overall_confidence: number;
+  processing_time_ms: number;
+  /** category -> filename -> base64 PNG. */
+  evidence?: Record<string, Record<string, string>>;
+}
+
+export interface SystemHealth {
+  status: string;
+  app: string;
+  version: string;
+  opencv: string;
+  database: "connected" | "disconnected";
+  schema_revision: string;
+}
 
 // ---------- Types ----------
 

@@ -1,368 +1,351 @@
 "use client";
 
-import { useState } from "react";
 import { motion } from "framer-motion";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Settings as SettingsIcon, Users,
-  Bell,
-  BellOff,
-  Key,
-  Lock,
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   ShieldCheck,
+  Server,
+  Globe,
   ToggleRight,
-  Save,
-  ExternalLink,
-  Calendar,
-  Edit,
+  LogOut,
   Cloud,
-  Slack as SlackIcon,
-  Mail,
-  CheckCircle,
-  XCircle,
 } from "@/components/icons";
+import { useAuth } from "@/lib/auth-context";
+import { useSystemHealth } from "@/lib/hooks";
+import { useTheme } from "@/lib/theme-provider";
 import { formatDate } from "@/lib/utils";
 
-// Inline settings data — migrate to API once settings endpoint is available
-const settingsData = {
-  workspace: {
-    name: "Acme Industries",
-    id: "org_01",
-    members: 12,
-    plan: "Enterprise",
+/**
+ * Mirrors the fallback in `lib/api.ts`. `lib/api.ts` does not export its base
+ * URL, so this is the same expression rather than a second source of truth.
+ */
+const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+/** Copied from the error message in `components/mission/system-health-panel.tsx`. */
+const BACKEND_START_COMMAND = "python3 -m uvicorn app.main:app --port 8000";
+
+const container = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1, delayChildren: 0.1 },
   },
-  notificationPrefs: {
-    email: true,
-    push: false,
-    findings: true,
-    tickets: true,
-    system: false,
-  },
-  security: {
-    mfaEnabled: true,
-    lastPasswordChange: "2025-09-15T00:00:00Z",
-    activeSessions: 2,
-  },
-  integrations: [
-    { id: "aws", name: "AWS S3 + EC2", status: "connected" as const, lastSync: "2025-10-08T14:00:00Z" },
-    { id: "slack", name: "Slack", status: "disconnected" as const },
-    { id: "email", name: "SMTP", status: "connected" as const, lastSync: "2025-10-07T18:00:00Z" },
-  ],
 };
 
+const item = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
+};
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-lg bg-surface/30 p-3">
+      <span className="text-sm text-secondary-text">{label}</span>
+      <span className="break-all text-right text-sm font-medium text-primary-text">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function ApiOffline({ reason }: { reason?: string }) {
+  return (
+    <div className="rounded-lg bg-critical/10 p-3 text-xs text-critical">
+      <p className="font-medium">
+        <code className="font-mono">GET /health</code> failed
+        {reason ? `: ${reason}` : " — the API did not answer."}
+      </p>
+      <p className="mt-2">
+        If the backend process is not running, start it from{" "}
+        <code className="font-mono">backend/</code> with{" "}
+        <code className="font-mono">{BACKEND_START_COMMAND}</code>.
+      </p>
+      <p className="mt-2">
+        A 401/403 means the request reached the API but the stored token was rejected — sign out
+        below and sign in again.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Settings that a "complete" settings page would show and this backend cannot
+ * serve. Each entry names the missing source instead of faking a value, because
+ * the competition rules forbid presenting unimplemented features as real.
+ */
+const unavailable: Array<{ label: string; reason: string }> = [
+  {
+    label: "Notification preferences",
+    reason:
+      "No endpoint accepts or stores them, so every switch that used to sit on this page persisted nothing. They have been deleted rather than decorated.",
+  },
+  {
+    label: "Multi-factor authentication",
+    reason:
+      "app/api/auth.py implements email + password JWT login only. There is no TOTP, no recovery codes, and no password-change route, so the previous 'MFA Enabled' badge and 'last password change' date had no source.",
+  },
+  {
+    label: "Active sessions",
+    reason:
+      "The access token is a stateless JWT and no session table exists, so a device count cannot be read. The '2 active sessions' row was invented.",
+  },
+  {
+    label: "Team members",
+    reason:
+      "organization_members is in the schema but no route returns it, and GET /api/auth/me exposes only organization_id. The '12 members' figure was invented.",
+  },
+  {
+    label: "Organization name and plan",
+    reason:
+      "UserRead has no organization name and the schema has no plan column, so 'Acme Industries' and 'Enterprise' were invented. Only the organization id is shown below.",
+  },
+  {
+    label: "API keys",
+    reason: "No key table and no issuing endpoint exist.",
+  },
+  {
+    label: "AWS S3 + EC2 integration",
+    reason:
+      "Not implemented: boto3 is not in backend/requirements.txt, uploads are served from local disk, and nothing in the backend ever assigns the s3_key columns. The 'connected' status and its last-sync timestamp were invented.",
+  },
+  {
+    label: "Slack and SMTP",
+    reason: "Neither client appears anywhere in backend/app.",
+  },
+  {
+    label: "Language, date format, CV engine selection",
+    reason:
+      "No preference store and no second OpenCV build to choose; the only real engine version is the one reported under System health.",
+  },
+];
+
 export default function SettingsPage() {
-  const [email, setEmail] = useState(settingsData.notificationPrefs.email);
-  const [push, setPush] = useState(settingsData.notificationPrefs.push);
-  const [findings, setFindings] = useState(settingsData.notificationPrefs.findings);
-  const [tickets, setTickets] = useState(settingsData.notificationPrefs.tickets);
-  const [system, setSystem] = useState(settingsData.notificationPrefs.system);
-
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1, delayChildren: 0.1 },
-    },
-  };
-
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
-  };
+  const { user, loading: authLoading, logout } = useAuth();
+  const {
+    data: health,
+    isLoading: healthLoading,
+    isError: healthError,
+    error: healthQueryError,
+  } = useSystemHealth();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-display font-bold text-gradient-hero">
-              Settings
-            </h1>
-            <p className="mt-1 text-secondary-text">
-              Configure your workspace, notifications, security, and integrations
-            </p>
-          </div>
-          <Button size="sm">
-            <Save className="h-4 w-4 mr-2" />
-            Save Changes
-          </Button>
-        </div>
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+        <h1 className="text-display font-bold text-gradient-hero">Settings</h1>
+        <p className="mt-1 text-secondary-text">
+          Only what the API can actually read: your signed-in identity, the API origin, and
+          live process health. Everything this page used to fake is now listed as unavailable.
+        </p>
       </motion.div>
 
       <motion.div
-        className="grid grid-cols-1 gap-6 lg:grid-cols-3"
+        className="grid grid-cols-1 gap-6 lg:grid-cols-2"
         variants={container}
         initial="hidden"
         animate="show"
       >
-        {/* Workspace */}
-        <motion.div variants={item} className="lg:col-span-3">
+        {/* Account — every field is one GET /api/auth/me response */}
+        <motion.div variants={item}>
           <Card>
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                Workspace
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                Account
               </CardTitle>
               <CardDescription>
-                Manage your organization and team settings
+                Signed-in identity from <code className="font-mono">GET /api/auth/me</code>
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div>
-                  <Label className="text-secondary-text">Organization</Label>
-                  <Input
-                    defaultValue={settingsData.workspace.name}
-                    className="mt-1 bg-surface/50 border-border focus:border-primary"
-                  />
+            <CardContent className="space-y-3">
+              {authLoading ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
                 </div>
-                <div>
-                  <Label className="text-secondary-text">Workspace ID</Label>
-                  <Input
-                    defaultValue={settingsData.workspace.id}
-                    className="mt-1 bg-surface/50 border-border focus:border-primary"
-                    readOnly
-                  />
-                </div>
-                <div>
-                  <Label className="text-secondary-text">Plan</Label>
-                  <Input
-                    defaultValue={settingsData.workspace.plan}
-                    className="mt-1 bg-surface/50 border-border focus:border-primary"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-between rounded-lg bg-surface/30 p-3">
-                <div>
-                  <span className="font-medium text-primary-text">
-                    {settingsData.workspace.members} team members
-                  </span>
-                  <p className="text-sm text-secondary-text">Manage team access and roles</p>
-                </div>
-                <Button variant="outline" size="sm">
-                  <Edit className="h-4 w-4 mr-2" />
-                  Manage Team
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Notifications */}
-        <motion.div variants={item} className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-primary-text flex items-center gap-2">
-                <Bell className="h-5 w-5 text-secondary" />
-                Notifications
-              </CardTitle>
-              <CardDescription>
-                Choose how you receive alerts and updates
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="email-notifications" className="text-secondary-text">
-                  Email notifications
-                </Label>
-                <Switch
-                  id="email-notifications"
-                  checked={email}
-                  onCheckedChange={setEmail}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="push-notifications" className="text-secondary-text">
-                  Push notifications
-                </Label>
-                <Switch
-                  id="push-notifications"
-                  checked={push}
-                  onCheckedChange={setPush}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="finding-alerts" className="text-secondary-text">
-                  Finding alerts
-                </Label>
-                <Switch
-                  id="finding-alerts"
-                  checked={findings}
-                  onCheckedChange={setFindings}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="ticket-updates" className="text-secondary-text">
-                  Ticket updates
-                </Label>
-                <Switch
-                  id="ticket-updates"
-                  checked={tickets}
-                  onCheckedChange={setTickets}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="system-alerts" className="text-secondary-text">
-                  System alerts
-                </Label>
-                <Switch
-                  id="system-alerts"
-                  checked={system}
-                  onCheckedChange={setSystem}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Security */}
-        <motion.div variants={item} className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-primary-text flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-success" />
-                Security
-              </CardTitle>
-              <CardDescription>
-                Authentication and access control settings
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between rounded-lg bg-surface/30 p-3">
-                <div className="flex items-center gap-3">
-                  <Lock className="h-5 w-5 text-warning" />
-                  <div>
-                    <p className="font-medium text-primary-text">Multi-Factor Auth</p>
-                    <p className="text-xs text-secondary-text">
-                      Last changed: {formatDate(settingsData.security.lastPasswordChange)}
-                    </p>
+              ) : user ? (
+                <>
+                  <Row label="Name" value={user.name} />
+                  <Row label="Email" value={user.email} />
+                  <Row label="Role" value={user.role} />
+                  <Row label="Organization id" value={user.organizationId} />
+                  <Row label="User id" value={user.id} />
+                  <div className="flex items-center justify-between rounded-lg bg-surface/30 p-3">
+                    <span className="text-sm text-secondary-text">Account status</span>
+                    <Badge variant={user.isActive ? "success" : "critical"}>
+                      {user.isActive ? "active" : "disabled"}
+                    </Badge>
                   </div>
-                </div>
-                <Badge variant={settingsData.security.mfaEnabled ? "success" : "warning"}>
-                  {settingsData.security.mfaEnabled ? "Enabled" : "Disabled"}
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between rounded-lg bg-surface/30 p-3">
-                <div className="flex items-center gap-3">
-                  <Key className="h-5 w-5 text-primary" />
-                  <div>
-                    <p className="font-medium text-primary-text">API Keys</p>
-                    <p className="text-xs text-secondary-text">2 active keys</p>
-                  </div>
-                </div>
-                <Button variant="ghost" size="sm">
-                  <Edit className="h-3 w-3" />
-                </Button>
-              </div>
-              <div className="flex items-center justify-between rounded-lg bg-surface/30 p-3">
-                <div className="flex items-center gap-3">
-                  <ToggleRight className="h-5 w-5 text-secondary-text" />
-                  <div>
-                    <p className="font-medium text-primary-text">Active Sessions</p>
-                    <p className="text-xs text-secondary-text">
-                      {settingsData.security.activeSessions} devices logged in
-                    </p>
-                  </div>
-                </div>
-                <Button variant="ghost" size="sm">
-                  Manage
-                </Button>
-              </div>
+                  <Row label="Account created" value={formatDate(user.createdAt)} />
+                </>
+              ) : (
+                <p className="text-sm text-warning">
+                  No session on this device. Identity comes from the API and requires a token,
+                  so there is nothing to display until you sign in.
+                </p>
+              )}
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Integrations */}
-        <motion.div variants={item} className="lg:col-span-1">
+        {/* System health — live /health read */}
+        <motion.div variants={item}>
           <Card>
             <CardHeader>
               <CardTitle className="text-primary-text flex items-center gap-2">
-                <Cloud className="h-5 w-5 text-primary" />
-                Integrations
+                <Server className="h-5 w-5 text-secondary" />
+                System health
               </CardTitle>
               <CardDescription>
-                Manage connected services and data sources
+                Read live from <code className="font-mono">GET /health</code>, refreshed every
+                15s
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {settingsData.integrations.map((integration) => {
-                const Icon = integration.status === "connected" ? CheckCircle : XCircle;
-                const iconColor = integration.status === "connected" ? "text-success" : "text-critical";
-                return (
-                  <motion.div
-                    key={integration.id}
-                    className="flex items-center justify-between rounded-lg bg-surface/30 p-3"
-                    whileHover={{ backgroundColor: "rgba(23, 34, 53, 0.5)" }}
-                  >
-                    <div className="flex items-center gap-3">
-                      {integration.name.includes("Slack") ? (
-                        <SlackIcon className="h-5 w-5 text-secondary-text" />
-                      ) : integration.name.includes("SMTP") ? (
-                        <Mail className="h-5 w-5 text-secondary-text" />
-                      ) : (
-                        <Cloud className="h-5 w-5 text-secondary-text" />
-                      )}
-                      <div>
-                        <p className="font-medium text-primary-text">{integration.name}</p>
-                        {integration.lastSync && (
-                          <p className="text-xs text-secondary-text">
-                            Last sync: {formatDate(integration.lastSync)}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={integration.status === "connected" ? "success" : "default"}>
-                        <Icon className={`h-3 w-3 mr-1 ${iconColor}`} />
-                        {integration.status}
-                      </Badge>
-                      <Button variant="ghost" size="icon-sm">
-                        <ExternalLink className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </motion.div>
-                );
-              })}
+            <CardContent className="space-y-3">
+              {healthLoading ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : healthError ? (
+                <ApiOffline reason={healthQueryError?.message} />
+              ) : health ? (
+                <>
+                  <Row label="Status" value={health.status} />
+                  <Row label="Application" value={`${health.app} ${health.version}`} />
+                  <Row label="OpenCV version" value={health.opencv} />
+                  <div className="flex items-center justify-between rounded-lg bg-surface/30 p-3">
+                    <span className="text-sm text-secondary-text">Database</span>
+                    <Badge
+                      variant={health.database === "connected" ? "success" : "critical"}
+                    >
+                      {health.database}
+                    </Badge>
+                  </div>
+                  <Row label="Schema revision" value={health.schema_revision} />
+                </>
+              ) : (
+                <p className="text-sm text-warning">
+                  The request finished without returning a health payload, so there is nothing to
+                  report. Reload this page; if it repeats, the API is not serving{" "}
+                  <code className="font-mono">/health</code>.
+                </p>
+              )}
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Preferences */}
-        <motion.div variants={item} className="lg:col-span-3">
+        {/* API endpoint */}
+        <motion.div variants={item}>
           <Card>
             <CardHeader>
-              <CardTitle className="text-primary-text">Application Preferences</CardTitle>
+              <CardTitle className="text-primary-text flex items-center gap-2">
+                <Globe className="h-5 w-5 text-primary" />
+                API origin
+              </CardTitle>
               <CardDescription>
-                Customize your Inspectra AI experience
+                Where this client sends every request
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-lg bg-surface/30 p-4">
-                  <p className="text-sm text-secondary-text">Theme</p>
-                  <p className="mt-1 font-medium text-primary-text">Dark (System)</p>
+            <CardContent className="space-y-3">
+              <Row label="NEXT_PUBLIC_API_URL" value={API_ORIGIN} />
+              <p className="text-xs text-secondary-text">
+                Set in <code className="font-mono">.env.local</code>; the client falls back to{" "}
+                <code className="font-mono">http://localhost:8000</code> when it is unset.
+                Requests are unproxied <code className="font-mono">fetch</code> calls, so a
+                failure here is the same failure the health card above reports.
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Appearance */}
+        <motion.div variants={item}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-primary-text flex items-center gap-2">
+                <ToggleRight className="h-5 w-5 text-secondary" />
+                Appearance
+              </CardTitle>
+              <CardDescription>
+                Theme selected on this device: {theme === "dark" ? "Dark" : "Light"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button variant="outline" size="sm" onClick={toggleTheme}>
+                <ToggleRight className="mr-2 h-4 w-4" />
+                Switch to {theme === "dark" ? "Light" : "Dark"}
+              </Button>
+              <p className="text-xs text-secondary-text">
+                This button really toggles the <code className="font-mono">light</code>/
+                <code className="font-mono">dark</code> class on the document element and saves
+                the choice in <code className="font-mono">localStorage</code>. Do not judge it by
+                the colours: the <code className="font-mono">.dark</code> token block in{" "}
+                <code className="font-mono">app/globals.css</code> is currently identical to{" "}
+                <code className="font-mono">:root</code>, so choosing Dark changes nothing on
+                screen. Light does change the palette. There is no preference stored on the
+                server.
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Sign out */}
+        <motion.div variants={item} className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-primary-text flex items-center gap-2">
+                <LogOut className="h-5 w-5 text-critical" />
+                Sign out
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button variant="destructive" size="sm" onClick={logout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign out of this device
+              </Button>
+              <p className="text-xs text-secondary-text">
+                Removes the stored JWT and returns to the login screen. The token is stateless
+                and the backend keeps no session table, so it cannot be revoked server-side.
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* What is missing, stated plainly */}
+        <motion.div variants={item} className="lg:col-span-2">
+          <Card className="border-border/50 bg-surface-elevated/30">
+            <CardHeader>
+              <CardTitle className="text-primary-text flex items-center gap-2">
+                <Cloud className="h-5 w-5 text-secondary-text" />
+                Not implemented by this backend
+              </CardTitle>
+              <CardDescription>
+                Earlier revisions of this page showed these as configured facts. They are
+                removed, and this is why.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {unavailable.map((entry) => (
+                <div key={entry.label} className="rounded-lg bg-surface/30 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-primary-text">{entry.label}</span>
+                    <Badge variant="outline">no data source</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-secondary-text">{entry.reason}</p>
                 </div>
-                <div className="rounded-lg bg-surface/30 p-4">
-                  <p className="text-sm text-secondary-text">Language</p>
-                  <p className="mt-1 font-medium text-primary-text">English (US)</p>
-                </div>
-                <div className="rounded-lg bg-surface/30 p-4">
-                  <p className="text-sm text-secondary-text">Date Format</p>
-                  <p className="mt-1 font-medium text-primary-text">MM/DD/YYYY</p>
-                </div>
-                <div className="rounded-lg bg-surface/30 p-4">
-                  <p className="text-sm text-secondary-text">CV Engine</p>
-                  <p className="mt-1 font-medium text-primary-text">OpenCV 5.0 + COOL</p>
-                </div>
-              </div>
+              ))}
             </CardContent>
           </Card>
         </motion.div>

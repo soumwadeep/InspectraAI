@@ -1,15 +1,23 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/ui/data-table";
+import { ExportButton } from "@/components/mission/export-button";
 import { SeverityIndicator } from "@/components/ui/severity-indicator";
 import { useFindings, useEquipment } from "@/lib/hooks";
-import { Finding, Equipment } from "@/lib/types";
+import {
+  BadgeVariant,
+  Equipment,
+  Finding,
+  FindingStatus,
+  Severity,
+  VerificationStatus,
+} from "@/lib/types";
 import { cn, formatRelativeTime, truncate } from "@/lib/utils";
 import { ColumnDef } from "@tanstack/react-table";
 import {
@@ -17,33 +25,31 @@ import {
   Eye,
   CheckCircle,
   XCircle,
-  Filter,
-  Download,
   Wrench,
   Clock3,
 } from "@/components/icons";
 import Link from "next/link";
 
-const verificationVariant = {
-  verified: "success" as const,
-  unverified: "warning" as const,
-  rejected: "critical" as const,
+const verificationVariant: Record<VerificationStatus, BadgeVariant> = {
+  verified: "success",
+  unverified: "warning",
+  rejected: "critical",
 };
 
-const resolutionVariant = {
-  "pending-review": "warning" as const,
-  confirmed: "info" as const,
-  rejected: "critical" as const,
-  "needs-evidence": "warning" as const,
-  "in-progress": "info" as const,
-  resolved: "success" as const,
+const resolutionVariant: Record<FindingStatus, BadgeVariant> = {
+  "pending-review": "warning",
+  confirmed: "info",
+  rejected: "critical",
+  "needs-evidence": "warning",
+  "in-progress": "info",
+  resolved: "success",
 };
 
-const severityVariant = {
-  critical: "critical" as const,
-  warning: "warning" as const,
-  info: "info" as const,
-  success: "success" as const,
+const severityVariant: Record<Severity, BadgeVariant> = {
+  critical: "critical",
+  warning: "warning",
+  info: "info",
+  success: "success",
 };
 
 function buildColumns(equipmentMap: Map<string, Equipment>): ColumnDef<Finding>[] {
@@ -96,20 +102,18 @@ function buildColumns(equipmentMap: Map<string, Equipment>): ColumnDef<Finding>[
     {
       accessorKey: "verificationStatus",
       header: "Verification",
-      cell: ({ row }) => (
-        <Badge variant={verificationVariant[row.getValue("verificationStatus")]}>
-          {row.getValue("verificationStatus")}
-        </Badge>
-      ),
+      cell: ({ row }) => {
+        const status = row.getValue<VerificationStatus>("verificationStatus");
+        return <Badge variant={verificationVariant[status]}>{status}</Badge>;
+      },
     },
     {
       accessorKey: "resolutionState",
       header: "Resolution",
-      cell: ({ row }) => (
-        <Badge variant={resolutionVariant[row.getValue("resolutionState")]}>
-          {row.getValue("resolutionState")}
-        </Badge>
-      ),
+      cell: ({ row }) => {
+        const state = row.getValue<FindingStatus>("resolutionState");
+        return <Badge variant={resolutionVariant[state]}>{state}</Badge>;
+      },
     },
     {
       accessorKey: "createdAt",
@@ -146,7 +150,6 @@ function buildColumns(equipmentMap: Map<string, Equipment>): ColumnDef<Finding>[
 }
 
 export default function FindingsPage() {
-  const [filterOpen, setFilterOpen] = useState(false);
   const { data: findings = [], isLoading: findingsLoading } = useFindings();
   const { data: equipment = [], isLoading: equipmentLoading } = useEquipment();
 
@@ -179,15 +182,26 @@ export default function FindingsPage() {
             Review and manage all detected anomalies and defects
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setFilterOpen(!filterOpen)}>
-            <Filter className="h-4 w-4 mr-2" />
-            Filter
-          </Button>
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-xs text-secondary-text tabular-nums sm:inline">
+            {criticalCount} critical · {warningCount} warning · {resolvedCount} resolved
+          </span>
+          <ExportButton
+            rows={findings}
+            columns={[
+              "id",
+              "equipmentId",
+              "inspectionId",
+              "category",
+              "severity",
+              "confidence",
+              "verificationStatus",
+              "resolutionState",
+              "description",
+              "createdAt",
+            ]}
+            name="findings"
+          />
         </div>
       </div>
 

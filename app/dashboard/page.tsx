@@ -10,16 +10,16 @@ import {
   Equipment as EquipmentIcon,
   InspectionIcon,
   AlertTriangle,
-  Wrench,
   Bot,
   TrendingUp,
   Plus,
 } from "@/components/icons";
 import { CustomBarChart } from "@/components/charts/bar-chart";
 import { CustomPieChart } from "@/components/charts/pie-chart";
+import { SystemHealthPanel } from "@/components/mission/system-health-panel";
 import { useAnalyticsOverview, useEquipment } from "@/lib/hooks";
-import { AnalyticsOverview } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { AgentActivityEntry, AnalyticsOverview } from "@/lib/api";
+import { cn, formatDurationMs, formatRelativeTime } from "@/lib/utils";
 import Link from "next/link";
 
 export default function OverviewPage() {
@@ -48,17 +48,17 @@ export default function OverviewPage() {
         { name: "Confirmed Findings", value: analytics.confirmed_findings, change: "Verified", trend: "up" as const },
         { name: "Open Tickets", value: analytics.open_tickets, change: "Action required", trend: analytics.open_tickets > 0 ? ("up" as const) : ("neutral" as const) },
         { name: "Completed Tickets", value: analytics.completed_tickets, change: "Closed", trend: "up" as const },
-        { name: "Avg. Processing", value: `${(analytics.avg_processing_ms / 1000).toFixed(1)}s`, change: "Per inspection", trend: "neutral" as const },
-        { name: "Detection Accuracy", value: "94.2%", change: "+2.1% this month", trend: "up" as const },
+        { name: "Avg. Processing", value: analytics.avg_processing_ms > 0 ? formatDurationMs(analytics.avg_processing_ms) : "No runs yet", change: "Per inspection", trend: "neutral" as const },
       ]
     : [];
 
   // Build chart data from analytics
   const inspectionTrend = analytics?.inspection_activity_trend ?? [];
   const findingCategories = analytics?.finding_categories ?? {};
+  // CustomPieChart consumes {name,value}; the backend groups as {category,count}.
   const findingsByCategory = Object.entries(findingCategories).map(([category, count]) => ({
-    category,
-    count,
+    name: category,
+    value: count,
   }));
 
   // Equipment for status overview
@@ -143,7 +143,7 @@ export default function OverviewPage() {
               Inspection Activity Trend
             </CardTitle>
             <p className="text-sm text-secondary-text">
-              Inspections completed over the last {analytics ? "30" : "?"} days
+              Inspections completed over the last 30 days
             </p>
           </CardHeader>
           <CardContent>
@@ -277,69 +277,7 @@ export default function OverviewPage() {
 
         {/* System Health */}
         <motion.div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-primary-text">System Health</CardTitle>
-              <p className="text-sm text-secondary-text">Real-time status</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <motion.div
-                className="flex items-center justify-between rounded-lg bg-surface/50 p-3"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-              >
-                <span className="text-sm text-secondary-text">Vision Engine</span>
-                <span className="flex items-center gap-2 text-success">
-                  <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                  <span className="text-xs font-medium">Online</span>
-                </span>
-              </motion.div>
-
-              <motion.div
-                className="flex items-center justify-between rounded-lg bg-surface/50 p-3"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.55 }}
-              >
-                <span className="text-sm text-secondary-text">Processing Queue</span>
-                <span className="text-sm font-medium text-warning">2 pending</span>
-              </motion.div>
-
-              <motion.div
-                className="flex items-center justify-between rounded-lg bg-surface/50 p-3"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-              >
-                <span className="text-sm text-secondary-text">Agent Workers</span>
-                <span className="text-sm font-medium text-success">3 active</span>
-              </motion.div>
-
-              <motion.div
-                className="flex items-center justify-between rounded-lg bg-surface/50 p-3"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.65 }}
-              >
-                <span className="text-sm text-secondary-text">Database</span>
-                <span className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                  <span className="text-xs font-medium text-success">Connected</span>
-                </span>
-              </motion.div>
-
-              <motion.div
-                className="flex items-center justify-between rounded-lg bg-surface/50 p-3"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7 }}
-              >
-                <span className="text-sm text-secondary-text">OpenCV Version</span>
-                <span className="text-sm font-medium text-primary">5.0.0</span>
-              </motion.div>
-            </CardContent>
-          </Card>
+          <SystemHealthPanel />
         </motion.div>
       </motion.div>
 
@@ -359,8 +297,8 @@ export default function OverviewPage() {
                 Latest inspections, findings, and maintenance actions
               </p>
             </div>
-            <Button variant="outline" size="sm">
-              View All
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/dashboard/history">View All</Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -418,7 +356,7 @@ function buildActivityFeed(analytics?: AnalyticsOverview) {
   }> = [];
 
   // Priority findings as activity
-  (analytics.priority_findings ?? []).slice(0, 3).forEach((f, i) => {
+  (analytics.priority_findings ?? []).slice(0, 3).forEach((f) => {
     feed.push({
       id: `finding-${f.id}`,
       title: `Finding: ${f.category}`,
@@ -429,13 +367,12 @@ function buildActivityFeed(analytics?: AnalyticsOverview) {
     });
   });
 
-  // Agent activity as activity
-  (analytics.agent_activity_feed ?? []).slice(0, 2).forEach((a: any) => {
+  (analytics.agent_activity_feed ?? []).slice(0, 2).forEach((a: AgentActivityEntry) => {
     feed.push({
       id: `agent-${a.run_id}`,
-      title: `Agent run completed for ${a.equipment ?? "unknown equipment"}`,
-      description: `${a.iterations ?? 0} iterations, budget: ${a.budget_used ?? 0}`,
-      time: "Recent",
+      title: `Agent run ${a.status} for ${a.equipment || "unknown equipment"}`,
+      description: `${a.iterations} iterations, budget: ${a.budget_used}`,
+      time: a.started_at ? formatRelativeTime(a.started_at) : "Recent",
       type: "agent",
       icon: <Bot className="h-4 w-4" />,
     });

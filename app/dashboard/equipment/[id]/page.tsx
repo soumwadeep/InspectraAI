@@ -10,8 +10,9 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { SeverityIndicator } from "@/components/ui/severity-indicator";
 import { DataTable } from "@/components/ui/data-table";
 import { useEquipmentDetail, useFindings, useInspections } from "@/lib/hooks";
+import { storageUrl } from "@/lib/api";
 import { Finding, Inspection, Equipment } from "@/lib/types";
-import { cn, formatDate, truncate } from "@/lib/utils";
+import { cn, formatDate, formatDurationMs, truncate } from "@/lib/utils";
 import {
   Package,
   Edit,
@@ -24,7 +25,6 @@ import {
   Eye,
   Wrench,
   ArrowLeft,
-  FileImage,
 } from "@/components/icons";
 import Link from "next/link";
 import { ColumnDef } from "@tanstack/react-table";
@@ -138,10 +138,11 @@ export default function EquipmentDetailPage() {
     {
       accessorKey: "duration",
       header: "Duration",
-      cell: ({ row }) => {
-        const d = row.getValue("duration") as number | undefined;
-        return d ? `${Math.floor(d / 60)}m ${d % 60}s` : "—";
-      },
+      cell: ({ row }) => (
+        <span className="font-mono text-sm text-secondary-text tabular-nums">
+          {formatDurationMs(row.getValue("duration") as number | undefined)}
+        </span>
+      ),
     },
     {
       accessorKey: "startTime",
@@ -273,19 +274,28 @@ export default function EquipmentDetailPage() {
           {equipment.referenceImages && equipment.referenceImages.length > 0 && (
             <div className="mt-6">
               <h4 className="mb-3 text-sm font-medium text-primary-text">
-                Reference Images
+                Reference images
               </h4>
+              <p className="mb-3 text-xs text-secondary-text">
+                Used as the alignment target for inspections of this equipment.
+              </p>
               <div className="flex flex-wrap gap-3">
-                {equipment.referenceImages.map((img, i) => (
-                  <div
-                    key={i}
-                    className="relative h-24 w-32 rounded-lg border border-border bg-surface-elevated/50 overflow-hidden"
+                {equipment.referenceImages.map((image) => (
+                  <figure
+                    key={image.id}
+                    className="relative h-24 w-32 overflow-hidden rounded-lg border border-border bg-surface-elevated/50"
                   >
-                    <FileImage className="absolute inset-0 m-auto h-8 w-8 text-secondary-text/50" />
-                    <span className="absolute bottom-1 right-1 text-xs text-secondary-text/70">
-                      {i + 1}
-                    </span>
-                  </div>
+                    <img
+                      src={storageUrl(image.storagePath)}
+                      alt={`Reference image ${image.filename}`}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <figcaption className="absolute inset-x-0 bottom-0 truncate bg-background/80 px-1 py-0.5 text-[10px] text-secondary-text">
+                      {image.filename}
+                    </figcaption>
+                  </figure>
                 ))}
               </div>
             </div>

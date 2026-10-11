@@ -1,16 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
+import { ExportButton } from "@/components/mission/export-button";
 import { StatusDot } from "@/components/ui/status-dot";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CustomBarChart } from "@/components/charts/bar-chart";
 import { useAgentRuns } from "@/lib/hooks";
-import { AgentRun, AgentStep } from "@/lib/types";
+import { AgentRun, AgentStep, BadgeVariant } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 import { ColumnDef } from "@tanstack/react-table";
 import {
@@ -19,8 +21,6 @@ import {
   Clock3,
   CheckCircle,
   XCircle,
-  Download,
-  Calendar,
   RefreshCw,
   Zap,
   Activity,
@@ -29,17 +29,21 @@ import {
   Plus,
 } from "@/components/icons";
 
-const statusVariant = {
+// AgentRun status includes "paused", which the previous maps omitted: a paused
+// run rendered an undefined dot colour and an unstyled badge.
+const statusVariant: Record<AgentRun["status"], BadgeVariant> = {
   running: "info",
   completed: "success",
   failed: "critical",
-} as const;
+  paused: "warning",
+};
 
-const statusDotMap = {
+const statusDotMap: Record<AgentRun["status"], "online" | "offline" | "processing" | "warning" | "idle"> = {
   running: "processing",
   completed: "online",
   failed: "offline",
-} as const;
+  paused: "warning",
+};
 
 const columns: ColumnDef<AgentRun>[] = [
   {
@@ -70,7 +74,7 @@ const columns: ColumnDef<AgentRun>[] = [
     accessorKey: "status",
     header: "Status",
     cell: ({ row }) => {
-      const status = row.getValue("status") as "running" | "completed" | "failed";
+      const status = row.getValue<AgentRun["status"]>("status");
       return (
         <div className="flex items-center gap-2">
           <StatusDot status={statusDotMap[status]} size="sm" showPulse={status === "running"} />
@@ -186,14 +190,22 @@ export default function AgentPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              <Calendar className="h-4 w-4 mr-2" />
-              Last 30 days
-            </Button>
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export Logs
-            </Button>
+            <ExportButton
+              rows={runs}
+              columns={[
+                "id",
+                "inspectionId",
+                "equipmentName",
+                "status",
+                "iterations",
+                "budgetUsed",
+                "toolCount",
+                "startTime",
+                "endTime",
+                "finalAction",
+              ]}
+              name="agent-runs"
+            />
           </div>
         </div>
       </motion.div>
@@ -337,10 +349,10 @@ export default function AgentPage() {
               </CardDescription>
             </div>
             <Button asChild size="sm">
-              <a href="/dashboard/agent/new">
+              <Link href="/dashboard/inspection/upload">
                 <Plus className="h-4 w-4 mr-2" />
-                New Agent Run
-              </a>
+                New inspection
+              </Link>
             </Button>
           </CardHeader>
           <CardContent>

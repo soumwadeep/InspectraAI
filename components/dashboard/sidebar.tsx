@@ -23,6 +23,7 @@ import {
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useTheme } from "@/lib/theme-provider";
+import { useAuth } from "@/lib/auth-context";
 
 const navItems = [
   { name: "Overview", icon: <Overview className="h-5 w-5" />, href: "/dashboard" },
@@ -43,6 +44,7 @@ export const Sidebar = () => {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
 
   return (
     <aside
@@ -193,10 +195,13 @@ export const Sidebar = () => {
           </motion.div>
         </button>
         <button
+          type="button"
+          onClick={logout}
           className={cn(
             "mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-secondary-text hover:bg-surface-elevated hover:text-critical",
             collapsed && "justify-center",
           )}
+          title={user ? `Sign out of ${user.organizationId.slice(0, 8)}` : "Sign out"}
         >
           <LogOut className="h-5 w-5" />
           {!collapsed && <span>Logout</span>}

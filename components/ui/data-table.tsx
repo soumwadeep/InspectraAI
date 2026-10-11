@@ -87,22 +87,48 @@ export function DataTable<TData, TValue>({
                 className="border-border/50 hover:bg-surface/50"
               >
                 {headerGroup.headers.map((header) => {
-                  return header.isPlaceholder ? (
-                    <TableHead key={header.id} />
-                  ) : (
+                  if (header.isPlaceholder) return <TableHead key={header.id} />;
+
+                  const canSort = header.column.getCanSort();
+                  // getIsSorted() yields false | "asc" | "desc"; comparing to
+                  // "ascending"/"descending" never matched, so the sort state was
+                  // invisible even when sorting worked.
+                  const sorted = header.column.getIsSorted();
+
+                  return (
                     <TableHead
                       key={header.id}
                       className={cn(
                         "bg-surface-elevated/50 text-secondary-text",
-                        header.column.getIsSorted() === "ascending" &&
-                          "text-primary",
-                        header.column.getIsSorted() === "descending" &&
-                          "text-primary",
+                        sorted && "text-primary",
                       )}
                     >
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
+                      {canSort ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          className="flex items-center gap-1.5 hover:text-primary"
+                          aria-sort={
+                            sorted === "asc"
+                              ? "ascending"
+                              : sorted === "desc"
+                                ? "descending"
+                                : "none"
+                          }
+                        >
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                          <span aria-hidden>
+                            {sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : "↕"}
+                          </span>
+                        </button>
+                      ) : (
+                        flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )
                       )}
                     </TableHead>
                   );
@@ -115,7 +141,6 @@ export function DataTable<TData, TValue>({
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
                   className="border-border/30 hover:bg-surface/50"
                 >
                   {row.getVisibleCells().map((cell) => (
@@ -141,34 +166,36 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => table.previousPage()}
-          disabled={
-            !table.getPaginationRowModel().pageCount ||
-            table.state.pagination.pageIndex === 0
-          }
-        >
-          Previous
-        </Button>
-        <span className="text-sm text-secondary-text">
-          Page {table.getState().pagination.pageIndex + 1} of{" "}
-          {table.getPageCount()}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-secondary-text tabular-nums">
+          {table.getFilteredRowModel().rows.length} row
+          {table.getFilteredRowModel().rows.length === 1 ? "" : "s"}
         </span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => table.nextPage()}
-          disabled={
-            !table.getPaginationRowModel().pageCount ||
-            table.getState().pagination.pageIndex + 1 >=
-              table.getPageCount()
-          }
-        >
-          Next
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.previousPage()}
+            // getPaginationRowModel() has no pageCount and table.state is not the
+            // public accessor, so both disabled-checks were undefined — which made
+            // these buttons permanently disabled on every table in the app.
+            disabled={!table.getCanPreviousPage()}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-secondary-text tabular-nums">
+            Page {table.getState().pagination.pageIndex + 1} of{" "}
+            {Math.max(table.getPageCount(), 1)}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            Next
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -29,6 +29,21 @@ export function formatRelativeTime(date: Date | string) {
   return `${days}d ago`;
 }
 
+/**
+ * Formats a duration given in **milliseconds**.
+ *
+ * Two tables previously divided the same value by 60 and labelled it minutes, so
+ * a 5,000 ms inspection rendered as "83m 20s". Keep the unit in the function name
+ * and no caller has to guess.
+ */
+export function formatDurationMs(ms?: number | null): string {
+  if (ms === undefined || ms === null || ms <= 0) return "—";
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${Math.round(seconds % 60)}s`;
+}
+
 export function truncate(str: string, length: number) {
   if (str.length <= length) return str;
   return str.slice(0, length) + "...";

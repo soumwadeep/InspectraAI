@@ -6,8 +6,9 @@ import time
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
+from app.config import settings
 from app.core.dependencies import get_current_user, get_current_organization_id, get_db
-from app.core.storage import StorageService
+from app.core.storage import MAX_FILE_SIZE_BYTES, StorageService
 from app.models.equipment import Equipment
 from app.models.inspection import (
     Inspection,
@@ -103,17 +104,36 @@ async def upload_inspection_input(
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
 
+    # MAX_FILE_SIZE_BYTES was defined in app.core.storage and never enforced;
+    # only the extension was checked, so arbitrarily large uploads were accepted.
+    if file.size and file.size > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"File is {file.size / (1024 * 1024):.1f} MB; "
+                f"the limit is {settings.max_upload_mb} MB"
+            ),
+        )
+
     rel_path = StorageService.save_image(file, subdir=f"inspections/{inspection_id}")
+
+    # StorageService has no UPLOAD_DIR attribute (it is a module-level constant),
+    # so this line raised AttributeError and every upload returned a 500 that the
+    # browser reported as "Failed to fetch". get_image_path() already resolves the
+    # stored relative path against the storage root.
+    stored = StorageService.get_image_path(rel_path)
+    if stored is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Upload was accepted but is not readable from storage",
+        )
 
     inspection_input = InspectionInput(
         inspection_id=inspection.id,
         input_type=input_type,
         filename=file.filename,
         storage_path=rel_path,
-        file_size_bytes=os.path.getsize(
-            str(StorageService.UPLOAD_DIR / rel_path.replace(str(StorageService.UPLOAD_DIR) + "/", ""))
-            if rel_path.startswith("storage") else StorageService.UPLOAD_DIR.parent / rel_path
-        ),
+        file_size_bytes=stored.stat().st_size,
         metadata_json={},
     )
     db.add(inspection_input)
@@ -173,12 +193,15 @@ async def run_inspection(
     tools = VisionTools(engine)
     agent = VisionAgent(db, tools)
 
-    # Resolve paths
-    ref_path = str(StorageService.UPLOAD_DIR.parent / ref_img.storage_path)
-    input_path = str(StorageService.UPLOAD_DIR.parent / inputs[0].storage_path)
+    # Resolve paths (StorageService.UPLOAD_DIR does not exist — see upload_inspection_input)
+    ref_resolved = StorageService.get_image_path(ref_img.storage_path)
+    input_resolved = StorageService.get_image_path(inputs[0].storage_path)
 
-    if not os.path.exists(ref_path) or not os.path.exists(input_path):
+    if ref_resolved is None or input_resolved is None:
         raise HTTPException(status_code=400, detail="Image files not found on disk")
+
+    ref_path = str(ref_resolved)
+    input_path = str(input_resolved)
 
     # Create agent run
     ctx = agent.create_run(

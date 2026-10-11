@@ -1,474 +1,312 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { MetricCard } from "@/components/ui/metric-card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { CustomBarChart } from "@/components/charts/bar-chart";
-import { useBenchmarks } from "@/lib/hooks";
 import {
-  Gauge,
-  Download,
-  Calendar,
-  Cpu,
-  Server,
-  CheckCircle,
-  TrendingUp,
-  BarChart2,
-  Clock,
-  Target,
-} from "@/components/icons";
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useBenchmarks, useSystemHealth } from "@/lib/hooks";
+import { formatDate } from "@/lib/utils";
+import { Gauge, AlertCircle, Database, Server, Cpu, Clock } from "@/components/icons";
 
-// Inline fallback data for benchmark detail fields
-const fallbackOperations = [
-  { operation: "Resize (4K→1080p)", standardMs: 12.4, coolMs: 8.7, improvement: "30%" },
-  { operation: "Color Conversion (BGR→HSV)", standardMs: 8.2, coolMs: 5.1, improvement: "38%" },
-  { operation: "Gaussian Blur (5x5)", standardMs: 15.3, coolMs: 9.8, improvement: "36%" },
-  { operation: "Adaptive Threshold", standardMs: 22.1, coolMs: 14.2, improvement: "36%" },
-  { operation: "Morphological Ops", standardMs: 18.7, coolMs: 11.9, improvement: "36%" },
-  { operation: "Canny Edge Detection", standardMs: 25.6, coolMs: 16.8, improvement: "34%" },
-  { operation: "Contour Extraction", standardMs: 14.9, coolMs: 9.4, improvement: "37%" },
-  { operation: "ORB Feature Detection", standardMs: 48.3, coolMs: 31.2, improvement: "35%" },
-];
+/** Copied from the error message in `components/mission/system-health-panel.tsx`. */
+const BACKEND_START_COMMAND = "python3 -m uvicorn app.main:app --port 8000";
 
-const fallbackAccuracy = {
-  precision: 96.8,
-  recall: 91.5,
-  f1Score: 94.1,
-  falsePositiveRate: 3.2,
-  falseNegativeRate: 8.5,
+const container = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1, delayChildren: 0.1 },
+  },
 };
 
-const fallbackTestEnvironment = {
-  opencvVersion: "5.0.0",
-  coolVersion: "2.1.0",
-  pythonVersion: "3.12",
-  platform: "Linux aarch64 (AWS Graviton2)",
-  cpuModel: "AWS Graviton2 (Neoverse N1)",
-  memory: "8 GB",
-  testImages: 50,
-  iterations: 100,
+const item = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
 };
 
-const fallbackHardwareComparison = [
-  { platform: "x86-64", resizeMs: 12.4, detectionMs: 48.3, totalMs: 512 },
-  { platform: "Graviton2 (COOL)", resizeMs: 8.7, detectionMs: 31.2, totalMs: 342 },
-  { platform: "Graviton2 (Standard)", resizeMs: 12.4, detectionMs: 48.3, totalMs: 512 },
-];
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-lg bg-surface/30 p-3">
+      <span className="text-sm text-secondary-text">{label}</span>
+      <span className="break-all text-right text-sm font-medium text-primary-text">
+        {value}
+      </span>
+    </div>
+  );
+}
 
-type OperationsData = Array<{
-  operation: string;
-  standardMs: number;
-  coolMs: number;
-  improvement: string;
-}>;
-
-type AccuracyData = {
-  precision: number;
-  recall: number;
-  f1Score: number;
-  falsePositiveRate: number;
-  falseNegativeRate: number;
-};
-
-type TestEnvironmentData = {
-  opencvVersion: string;
-  coolVersion?: string;
-  pythonVersion?: string;
-  platform: string;
-  cpuModel?: string;
-  memory?: string;
-  testImages: number;
-  iterations: number;
-};
-
-type HardwareComparisonData = Array<{
-  platform: string;
-  resizeMs: number;
-  detectionMs: number;
-  totalMs: number;
-}>;
+function OfflineNotice({ endpoint, reason }: { endpoint: string; reason?: string }) {
+  return (
+    <div className="rounded-lg bg-critical/10 p-4 text-critical">
+      <div className="flex items-center gap-2">
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        <p className="text-sm font-medium">
+          <code className="font-mono">{endpoint}</code> failed
+          {reason ? `: ${reason}` : " — the API did not answer."}
+        </p>
+      </div>
+      <p className="mt-2 text-xs">
+        If the backend process is not running, start it from{" "}
+        <code className="font-mono">backend/</code> with{" "}
+        <code className="font-mono">{BACKEND_START_COMMAND}</code>, then reload this page.
+      </p>
+      <p className="mt-1 text-xs">
+        A 401/403 means the request reached the API but the stored token was rejected.
+      </p>
+    </div>
+  );
+}
 
 export default function BenchmarksPage() {
-  const { data: benchmarks, isLoading, isError } = useBenchmarks();
+  const {
+    data: benchmarks,
+    isLoading,
+    isError,
+    error: benchmarksError,
+  } = useBenchmarks();
+  const {
+    data: health,
+    isLoading: healthLoading,
+    isError: healthIsError,
+    error: healthError,
+  } = useSystemHealth();
 
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1, delayChildren: 0.1 },
-    },
-  };
-
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25 } },
-  };
-
-  // Pick the latest benchmark run for detailed display; fall back to inline data
-  const latest = benchmarks?.[0];
-  const results = (latest?.results ?? {}) as Record<string, unknown>;
-
-  const operations: OperationsData =
-    (results.operations as OperationsData) ?? fallbackOperations;
-
-  const accuracy: AccuracyData =
-    (results.accuracy as AccuracyData) ?? fallbackAccuracy;
-
-  const testEnvironment: TestEnvironmentData =
-    (results.test_environment as TestEnvironmentData) ??
-    (latest?.config as TestEnvironmentData) ??
-    fallbackTestEnvironment;
-
-  const hardwareComparison: HardwareComparisonData =
-    (results.hardware_comparison as HardwareComparisonData) ??
-    fallbackHardwareComparison;
-
-  if (isError) {
-    return (
-      <div className="space-y-6">
-        <motion.div
-          className="rounded-lg bg-critical/10 p-4 text-critical"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
-          Failed to load benchmark data. Please try again later.
-        </motion.div>
-      </div>
-    );
-  }
+  const runCount = benchmarks?.length ?? 0;
 
   return (
     <div className="space-y-8">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-display font-bold text-gradient-hero">
-              Performance Benchmarks
-            </h1>
-            <p className="mt-1 text-secondary-text">
-              {latest?.description ??
-                "OpenCV 5 vision pipeline performance and COOL acceleration benchmarks"}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              <Calendar className="h-4 w-4 mr-2" />
-              Last 30 days
-            </Button>
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export Benchmark
-            </Button>
-          </div>
-        </div>
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+        <h1 className="text-display font-bold text-gradient-hero">
+          Performance Benchmarks
+        </h1>
+        <p className="mt-1 text-secondary-text">
+          No verified benchmark dataset exists yet, so this page reports only what the API can
+          actually return: the OpenCV build the server is running, and the rows stored in{" "}
+          <code className="font-mono">benchmark_runs</code>.
+        </p>
       </motion.div>
 
-      {/* Summary Cards */}
+      {/* Query failures are stated, not hidden behind an empty chart */}
+      {(isError || healthIsError) && (
+        <motion.div
+          className="space-y-3"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          {isError && (
+            <OfflineNotice
+              endpoint="GET /api/benchmarks"
+              reason={benchmarksError?.message}
+            />
+          )}
+          {healthIsError && (
+            <OfflineNotice endpoint="GET /health" reason={healthError?.message} />
+          )}
+        </motion.div>
+      )}
+
+      {/* Runtime facts, read from the live process */}
       <motion.div
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid grid-cols-1 gap-6 lg:grid-cols-2"
         variants={container}
         initial="hidden"
         animate="show"
       >
         <motion.div variants={item}>
-          <MetricCard
-            title="Precision"
-            value={`${isLoading ? "—" : accuracy.precision}%`}
-            change="High confidence detections"
-            trend="up"
-            icon={
-              <div className="rounded-lg bg-surface-elevated p-2">
-                <CheckCircle className="h-4 w-4 text-success" />
-              </div>
-            }
-          />
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-primary-text flex items-center gap-2">
+                <Gauge className="h-5 w-5 text-primary" />
+                Vision runtime
+              </CardTitle>
+              <CardDescription>
+                Read live from <code className="font-mono">GET /health</code> — not a benchmark
+                result
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {healthLoading ? (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : health ? (
+                <>
+                  <div className="flex items-center gap-3 rounded-lg bg-surface/30 p-3">
+                    <Cpu className="h-5 w-5 shrink-0 text-secondary-text" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-secondary-text">OpenCV in the API process</p>
+                      <p className="font-medium break-all text-primary-text">{health.opencv}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-lg bg-surface/30 p-3">
+                    <Server className="h-5 w-5 shrink-0 text-secondary-text" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-secondary-text">Application</p>
+                      <p className="font-medium break-all text-primary-text">
+                        {health.app} {health.version}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-surface/30 p-3">
+                    <div className="flex items-center gap-3">
+                      <Database className="h-5 w-5 shrink-0 text-secondary-text" />
+                      <span className="text-sm text-secondary-text">Database</span>
+                    </div>
+                    <Badge
+                      variant={health.database === "connected" ? "success" : "critical"}
+                    >
+                      {health.database}
+                    </Badge>
+                  </div>
+                  <Row label="Schema revision" value={health.schema_revision} />
+                </>
+              ) : healthIsError ? (
+                <p className="text-sm text-critical">
+                  No runtime version to report —{" "}
+                  <code className="font-mono">GET /health</code> failed
+                  {healthError?.message ? `: ${healthError.message}` : "."} See the notice above.
+                </p>
+              ) : (
+                <p className="text-sm text-warning">
+                  The request finished without returning a health payload, so there is no runtime
+                  version to report. Reload this page; if it repeats, the API is not serving{" "}
+                  <code className="font-mono">/health</code>.
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </motion.div>
+
         <motion.div variants={item}>
-          <MetricCard
-            title="Recall"
-            value={`${isLoading ? "—" : accuracy.recall}%`}
-            change="Anomaly capture rate"
-            trend="up"
-            icon={
-              <div className="rounded-lg bg-surface-elevated p-2">
-                <Target className="h-4 w-4 text-primary" />
-              </div>
-            }
-          />
-        </motion.div>
-        <motion.div variants={item}>
-          <MetricCard
-            title="F1 Score"
-            value={`${isLoading ? "—" : accuracy.f1Score}%`}
-            change="Balanced metric"
-            trend="neutral"
-            icon={
-              <div className="rounded-lg bg-surface-elevated p-2">
-                <BarChart2 className="h-4 w-4 text-secondary" />
-              </div>
-            }
-          />
-        </motion.div>
-        <motion.div variants={item}>
-          <MetricCard
-            title="False Positive Rate"
-            value={`${isLoading ? "—" : accuracy.falsePositiveRate}%`}
-            change="-48% vs baseline"
-            trend="down"
-            icon={
-              <div className="rounded-lg bg-surface-elevated p-2">
-                <TrendingUp className="h-4 w-4 text-critical" />
-              </div>
-            }
-          />
+          <Card className="border-border/50 bg-surface-elevated/30">
+            <CardHeader>
+              <CardTitle className="text-primary-text flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-warning" />
+                Why there are no numbers here
+              </CardTitle>
+              <CardDescription>
+                What was removed from this page, and why it could not have been true
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-secondary-text">
+              <p>
+                <span className="font-medium text-primary-text">COOL is not installed.</span> The
+                backend depends on <code className="font-mono">opencv-python-headless</code> and
+                no file under <code className="font-mono">backend/app</code> references COOL,
+                contrib, or UMat. The per-operation COOL-vs-standard latency table and the
+                x86-64 vs Graviton2 comparison chart on this page were fabricated and are gone,
+                along with the &quot;AWS Graviton2&quot; environment block.
+              </p>
+              <p>
+                <span className="font-medium text-primary-text">No labelled ground truth.</span>{" "}
+                <code className="font-mono">
+                  backend/app/vision/metrics.py::calculate_precision_recall
+                </code>{" "}
+                needs predicted and ground-truth boxes; nothing in the project supplies them, so
+                the Precision / Recall / F1 / false-positive figures removed here had no source.
+              </p>
+              <p>
+                <span className="font-medium text-primary-text">
+                  <code className="font-mono">POST /api/benchmarks/run</code> is not a
+                  measurement.
+                </span>{" "}
+                It imports the vision modules and writes hardcoded &quot;passed&quot; strings without
+                opening an image. That is why this page deliberately has no Run benchmark
+                button: pressing it would record a pass that never happened.
+              </p>
+            </CardContent>
+          </Card>
         </motion.div>
       </motion.div>
 
-      {/* Test Environment Card */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-      >
-        <Card className="border-border/50 bg-surface-elevated/30">
-          <CardHeader>
-            <CardTitle className="text-primary-text">Test Environment</CardTitle>
-            <CardDescription>
-              Vision pipeline benchmark configuration
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {[...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="flex items-center gap-3">
-                  <Cpu className="h-5 w-5 text-secondary-text" />
-                  <div>
-                    <p className="text-xs text-secondary-text">Processor</p>
-                    <p className="font-medium text-primary-text">{testEnvironment.platform}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Server className="h-5 w-5 text-secondary-text" />
-                  <div>
-                    <p className="text-xs text-secondary-text">OpenCV</p>
-                    <p className="font-medium text-primary-text">v{testEnvironment.opencvVersion}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Clock className="h-5 w-5 text-secondary-text" />
-                  <div>
-                    <p className="text-xs text-secondary-text">Iterations</p>
-                    <p className="font-medium text-primary-text">{testEnvironment.iterations} per op</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Gauge className="h-5 w-5 text-secondary-text" />
-                  <div>
-                    <p className="text-xs text-secondary-text">Test Images</p>
-                    <p className="font-medium text-primary-text">{testEnvironment.testImages} images</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* COOL Performance Comparison */}
-      <motion.div
-        className="grid grid-cols-1 gap-6 lg:grid-cols-2"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-      >
+      {/* Run history — the only listable real data */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <Card>
           <CardHeader>
-            <CardTitle className="text-primary-text">
-              COOL Acceleration vs Standard OpenCV
+            <CardTitle className="text-primary-text flex items-center gap-2">
+              <Clock className="h-5 w-5 text-secondary" />
+              Stored benchmark runs
             </CardTitle>
             <CardDescription>
-              Per-operation latency reduction with COOL optimized routines
+              {isLoading
+                ? "Loading from GET /api/benchmarks"
+                : `${runCount} run${runCount === 1 ? "" : "s"} returned by GET /api/benchmarks`}
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-[300px] w-full" />
-            ) : operations.length === 0 ? (
-              <p className="text-sm text-secondary-text">No operation data available</p>
-            ) : (
-              <CustomBarChart
-                data={operations}
-                xKey="operation"
-                bars={[
-                  { key: "coolMs", name: "COOL (Optimized)", color: "#38BDF8" },
-                  { key: "standardMs", name: "Standard OpenCV", color: "#64748B" },
-                ]}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-primary-text">
-              Hardware Platform Comparison
-            </CardTitle>
-            <CardDescription>
-              Total processing time across platforms
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-[300px] w-full" />
-            ) : hardwareComparison.length === 0 ? (
-              <p className="text-sm text-secondary-text">No hardware comparison data available</p>
-            ) : (
-              <CustomBarChart
-                data={hardwareComparison}
-                xKey="platform"
-                bars={[
-                  { key: "totalMs", name: "Total Time (ms)", color: "#22D3EE" },
-                ]}
-              />
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Detailed Operations Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-primary-text">Operation Details</CardTitle>
-            <CardDescription>
-              Side-by-side comparison of COOL-optimized vs standard OpenCV 5 performance
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             {isLoading ? (
               <div className="space-y-3">
-                {[...Array(6)].map((_, i) => (
+                {[...Array(3)].map((_, i) => (
                   <Skeleton key={i} className="h-16 w-full" />
                 ))}
               </div>
+            ) : isError ? (
+              <p className="text-sm text-secondary-text">
+                No run list is available because the request failed; the notice above explains how
+                to bring the API up.
+              </p>
+            ) : runCount === 0 ? (
+              <div className="rounded-lg border border-dashed border-border p-4">
+                <p className="text-sm font-medium text-primary-text">
+                  The run list is empty.
+                </p>
+                <p className="mt-1 text-sm text-secondary-text">
+                  A real benchmark run requires a labelled ground-truth dataset, which does not
+                  exist yet — there is no annotated defect corpus in{" "}
+                  <code className="font-mono">backend/storage</code> and nothing in the API can
+                  produce one. Until it exists, there is no latency or accuracy figure to list.
+                </p>
+              </div>
             ) : (
-              <div className="space-y-3">
-                {operations.map((op, i) => (
+              <>
+                <p className="text-xs text-warning">
+                  Rows below are whatever the{" "}
+                  <code className="font-mono">POST /api/benchmarks/run</code> handler recorded.
+                  That handler hardcodes its &quot;passed&quot; markers without processing an image, so a
+                  row is proof the endpoint was called — not evidence of a measurement.
+                </p>
+                {benchmarks?.map((run) => (
                   <motion.div
-                    key={op.operation}
-                    className="glass flex items-center justify-between rounded-lg p-4"
+                    key={run.id}
+                    className="glass rounded-lg p-4"
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.5 + i * 0.05 }}
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                        <Gauge className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-primary-text">{op.operation}</p>
-                        <p className="text-xs text-secondary-text">
-                          Standard: {op.standardMs}ms · COOL: {op.coolMs}ms
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="font-medium text-primary-text">{run.name}</p>
+                        {run.description && (
+                          <p className="text-sm text-secondary-text">{run.description}</p>
+                        )}
+                        <p className="mt-1 break-all text-xs text-secondary-text">
+                          <code className="font-mono">{run.id}</code> · recorded{" "}
+                          {formatDate(run.createdAt)}
                         </p>
                       </div>
+                      <Badge variant="outline" className="shrink-0 font-mono">
+                        {run.durationMs} ms
+                      </Badge>
                     </div>
-                    <div className="flex items-center gap-6">
-                      <div className="w-32">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-secondary-text">COOL Latency</span>
-                          <span className="text-primary-text">{op.coolMs}ms</span>
-                        </div>
-                        <div className="mt-1 h-2 w-full rounded-full bg-surface-elevated">
-                          <div
-                            className="h-2 rounded-full bg-primary"
-                            style={{ width: `${(op.coolMs / op.standardMs) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="w-16 text-right">
-                        <Badge variant="success" className="font-mono">
-                          {op.improvement}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {Object.entries(run.results).map(([key, value]) => (
+                        <Badge key={key} variant="default" className="font-mono">
+                          {key}:{" "}
+                          {typeof value === "object" ? JSON.stringify(value) : String(value)}
                         </Badge>
-                      </div>
+                      ))}
                     </div>
                   </motion.div>
                 ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Accuracy Breakdown */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-primary-text">
-              Detection Accuracy Breakdown
-            </CardTitle>
-            <CardDescription>
-              Confusion matrix results from 50 test images with 100 iterations
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                {[...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-24 w-full" />
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <div className="space-y-4">
-                  <div className="rounded-lg bg-surface/30 p-4">
-                    <p className="text-sm text-secondary-text">False Positive Rate</p>
-                    <div className="mt-1 text-2xl font-bold text-success">
-                      {accuracy.falsePositiveRate}%
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-surface/30 p-4">
-                    <p className="text-sm text-secondary-text">False Negative Rate</p>
-                    <div className="mt-1 text-2xl font-bold text-warning">
-                      {accuracy.falseNegativeRate}%
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div className="rounded-lg bg-surface/30 p-4">
-                    <p className="text-sm text-secondary-text">Precision</p>
-                    <div className="mt-1 text-2xl font-bold text-primary">
-                      {accuracy.precision}%
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-surface/30 p-4">
-                    <p className="text-sm text-secondary-text">Recall</p>
-                    <div className="mt-1 text-2xl font-bold text-secondary">
-                      {accuracy.recall}%
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </>
             )}
           </CardContent>
         </Card>

@@ -73,6 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
+    // api.auth.logout() clears the stored token; nothing else is needed, since
+    // the JWT is stateless and the server has no session to invalidate.
     api.auth.logout();
     setUser(null);
     router.push("/login");

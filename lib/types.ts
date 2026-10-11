@@ -1,5 +1,22 @@
 export type Severity = "critical" | "warning" | "info" | "success";
 
+export type VerificationStatus = "unverified" | "verified" | "rejected";
+
+export type TicketPriority = "low" | "medium" | "high" | "critical";
+
+/**
+ * Badge variants are looked up from tables keyed by the unions above. Declaring
+ * those tables `Record<Union, BadgeVariant>` makes a missing case a compile
+ * error instead of an `undefined` className at runtime.
+ */
+export type BadgeVariant =
+  | "default"
+  | "critical"
+  | "warning"
+  | "success"
+  | "info"
+  | "outline";
+
 export type FindingStatus =
   | "pending-review"
   | "confirmed"
@@ -43,6 +60,17 @@ export interface User {
   organizationId: string;
 }
 
+export interface ReferenceImage {
+  id: string;
+  filename: string;
+  /** Path relative to the backend storage root, e.g. `uploads/reference/x.jpg`. */
+  storagePath: string;
+  /** Measured server-side on upload; lets overlays reserve aspect ratio first. */
+  width?: number | null;
+  height?: number | null;
+  uploadedAt: string;
+}
+
 export interface Equipment {
   id: string;
   name: string;
@@ -57,8 +85,13 @@ export interface Equipment {
   assignedInspector: string;
   status: EquipmentStatus;
   openFindings: number;
-  lastInspection?: string;
-  referenceImages?: string[];
+  /**
+   * Summary from `GET /api/equipment/{id}/status`. The equipment read schema
+   * always returns null here, so the detail page fetches the status endpoint
+   * when it needs the real last inspection.
+   */
+  lastInspection?: Record<string, unknown>;
+  referenceImages?: ReferenceImage[];
 }
 
 export interface QualityMetrics {
@@ -81,7 +114,7 @@ export interface Finding {
   detectionMethod: string;
   confidence?: number;
   severity: Severity;
-  verificationStatus: "unverified" | "verified" | "rejected";
+  verificationStatus: VerificationStatus;
   createdAt: string;
   assignedReviewer?: string;
   resolutionState: FindingStatus;
@@ -93,7 +126,7 @@ export interface MaintenanceTicket {
   id: string;
   equipmentId: string;
   findingId: string;
-  priority: "low" | "medium" | "high" | "critical";
+  priority: TicketPriority;
   description: string;
   assignedOperator?: string;
   status: TicketStatus;
@@ -117,11 +150,13 @@ export interface ApprovalRecord {
 export interface Inspection {
   id: string;
   equipmentId: string;
+  organizationId: string;
   inspectorId: string;
   startTime: string;
   endTime?: string;
   status: InspectionStatus;
   findings: string[];
+  /** Wall-clock milliseconds of the run, measured server-side. */
   duration?: number;
   agentRunId?: string;
 }

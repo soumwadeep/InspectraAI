@@ -93,7 +93,7 @@ export default function RegisterPage() {
               Create Your Account
             </h2>
             <p className="mt-1 text-sm text-secondary-text">
-              Start your 14-day free trial. No credit card required.
+              Create your organization workspace and first administrator account.
             </p>
           </div>
 

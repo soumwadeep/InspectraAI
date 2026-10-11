@@ -7,9 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/ui/data-table";
+import { ExportButton } from "@/components/mission/export-button";
 import { StatusDot } from "@/components/ui/status-dot";
 import { useTickets, useEquipment } from "@/lib/hooks";
-import { MaintenanceTicket, Equipment } from "@/lib/types";
+import {
+  BadgeVariant,
+  Equipment,
+  MaintenanceTicket,
+  TicketPriority,
+  TicketStatus,
+} from "@/lib/types";
 import { cn, formatDate, formatRelativeTime, truncate } from "@/lib/utils";
 import { ColumnDef } from "@tanstack/react-table";
 import {
@@ -19,28 +26,26 @@ import {
   CheckCircle,
   Clock3,
   XCircle,
-  Filter,
-  Download,
   AlertTriangle,
 } from "@/components/icons";
 import Link from "next/link";
 
-const statusVariant = {
-  draft: "default" as const,
-  "awaiting-approval": "warning" as const,
-  open: "info" as const,
-  assigned: "info" as const,
-  "in-progress": "info" as const,
-  "awaiting-verification": "warning" as const,
-  closed: "success" as const,
-  reopened: "critical" as const,
+const statusVariant: Record<TicketStatus, BadgeVariant> = {
+  draft: "default",
+  "awaiting-approval": "warning",
+  open: "info",
+  assigned: "info",
+  "in-progress": "info",
+  "awaiting-verification": "warning",
+  closed: "success",
+  reopened: "critical",
 };
 
-const priorityVariant = {
-  low: "default" as const,
-  medium: "info" as const,
-  high: "warning" as const,
-  critical: "critical" as const,
+const priorityVariant: Record<TicketPriority, BadgeVariant> = {
+  low: "default",
+  medium: "info",
+  high: "warning",
+  critical: "critical",
 };
 
 const statusDotMap = {
@@ -81,11 +86,12 @@ function buildColumns(equipmentMap: Map<string, Equipment>): ColumnDef<Maintenan
     {
       accessorKey: "priority",
       header: "Priority",
-      cell: ({ row }) => (
-        <Badge variant={priorityVariant[row.getValue("priority")]}>
-          {row.getValue("priority")}
-        </Badge>
-      ),
+      cell: ({ row }) => {
+        const priority = row.getValue<TicketPriority>("priority");
+        return (
+          <Badge variant={priorityVariant[priority]}>{priority}</Badge>
+        );
+      },
     },
     {
       accessorKey: "description",
@@ -193,14 +199,22 @@ export default function TicketsPage() {
               New Ticket
             </Link>
           </Button>
-          <Button variant="outline" size="sm">
-            <Filter className="h-4 w-4 mr-2" />
-            Filter
-          </Button>
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
+          <ExportButton
+            rows={tickets}
+            columns={[
+              "id",
+              "equipmentId",
+              "findingId",
+              "priority",
+              "status",
+              "assignedOperator",
+              "dueDate",
+              "repairVerification",
+              "description",
+              "createdAt",
+            ]}
+            name="tickets"
+          />
         </div>
       </div>
 

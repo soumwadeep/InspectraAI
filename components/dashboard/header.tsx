@@ -1,10 +1,11 @@
 "use client";
 
-import { Bell, Search, User } from "lucide-react";
+import { Bell } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { motion } from "framer-motion";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { motion } from "framer-motion";
+import { useAnalyticsOverview } from "@/lib/hooks";
+import { useAuth } from "@/lib/auth-context";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",
@@ -17,13 +18,24 @@ const pageTitles: Record<string, string> = {
   "/dashboard/agent": "Agent Activity",
   "/dashboard/analytics": "Analytics",
   "/dashboard/benchmarks": "Benchmarks",
-  "/dashboard/reports": "Reports",
+  "/dashboard/reports": "Data export",
   "/dashboard/settings": "Settings",
 };
 
+/**
+ * Command-style top bar.
+ *
+ * The search field and notification badge that used to live here were inert:
+ * the badge was the literal `3`, and typing in the search box did nothing.
+ * Global search returns with the CommandHeader rewrite, wired to a real query.
+ */
 export const Header = () => {
   const pathname = usePathname();
   const title = pageTitles[pathname] || "Inspectra AI";
+  const { user } = useAuth();
+  const { data: analytics } = useAnalyticsOverview();
+
+  const pendingReview = analytics?.pending_review ?? 0;
 
   return (
     <motion.header
@@ -34,43 +46,42 @@ export const Header = () => {
     >
       <div className="flex items-center gap-4">
         <h1 className="text-title font-bold text-primary-text">{title}</h1>
-        <div className="hidden md:block">
-          <nav className="flex items-center space-x-2 text-sm text-secondary-text">
-            <Link
-              href="/dashboard"
-              className="hover:text-primary transition-colors"
-            >
-              Home
-            </Link>
-            <span className="text-border">/</span>
-            <span className="text-primary">{title}</span>
-          </nav>
-        </div>
+        <nav className="hidden items-center space-x-2 text-sm text-secondary-text md:flex">
+          <Link href="/dashboard" className="transition-colors hover:text-primary">
+            Home
+          </Link>
+          <span className="text-border">/</span>
+          <span className="text-primary">{title}</span>
+        </nav>
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="relative hidden md:block">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary-text" />
-          <input
-            type="text"
-            placeholder="Search..."
-            className="h-9 w-64 rounded-lg border border-border bg-surface/50 pl-10 pr-3 text-sm text-primary-text placeholder:text-secondary-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="relative rounded-lg p-2 text-secondary-text hover:bg-surface-elevated hover:text-primary focus:outline-none"
+        <Link
+          href="/dashboard/findings"
+          className="relative rounded-lg p-2 text-secondary-text transition-colors hover:bg-surface-elevated hover:text-primary"
+          aria-label={
+            pendingReview > 0
+              ? `${pendingReview} findings awaiting review`
+              : "No findings awaiting review"
+          }
         >
           <Bell className="h-4 w-4" />
-          <span className="absolute top-1 right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-critical text-[10px] text-white">
-            3
-          </span>
-        </motion.button>
+          {pendingReview > 0 && (
+            <span className="absolute right-1 top-1 rounded-full bg-critical px-1 text-[10px] font-medium leading-tight text-white tabular-nums">
+              {pendingReview > 99 ? "99+" : pendingReview}
+            </span>
+          )}
+        </Link>
 
-        <div className="h-8 w-8 rounded-full bg-primary/20 ring-2 ring-primary/30 flex items-center justify-center overflow-hidden">
-          <User className="h-5 w-5 text-primary" />
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface/50 px-3 py-1.5">
+          <div className="text-right">
+            <p className="text-xs font-medium text-primary-text">
+              {user?.name ?? "Not signed in"}
+            </p>
+            <p className="text-[10px] uppercase tracking-wide text-secondary-text">
+              {user?.role ?? "guest"}
+            </p>
+          </div>
         </div>
       </div>
     </motion.header>
