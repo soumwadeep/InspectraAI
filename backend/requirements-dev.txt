@@ -1,0 +1,5 @@
+# Development-only tooling. Not installed by the backend image.
+# pytest 9 + httpx (which supplies fastapi.testclient's transport) verified on
+# Python 3.13.2.
+pytest>=9,<10
+httpx>=0.28,<1

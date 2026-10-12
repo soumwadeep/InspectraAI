@@ -91,7 +91,9 @@ class StorageService:
 
         root = UPLOAD_DIR.parent.resolve()
         candidate = (root / relative_path).resolve()
-        if root not in candidate.parents and candidate != root:
+        # Strictly inside: the root itself is a directory, and returning it would
+        # let `.` reach callers that then treat the result as a file.
+        if root not in candidate.parents:
             return None
         return candidate
 

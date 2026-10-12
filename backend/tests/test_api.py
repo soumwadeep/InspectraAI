@@ -1,0 +1,225 @@
+"""HTTP-level guarantees: tenant isolation, path containment, state guards."""
+from __future__ import annotations
+
+import cv2
+import numpy as np
+import pytest
+
+from app.core.storage import StorageService
+from app.models.equipment import Equipment, EquipmentReferenceImage
+from app.models.inspection import Inspection, InspectionInput
+from app.models.ticket import MaintenanceTicket, TicketStatusEnum
+from app.models.user import Organization
+from app.vision.benchmark import draw_panel, inject_defect
+
+
+class TestPathContainment:
+    """`UPLOAD_DIR.parent / stored_path` with an attacker-influenced path escapes
+    the storage tree; every file endpoint would then serve the target."""
+
+    @pytest.mark.parametrize(
+        "escaped",
+        [
+            "../../etc/passwd",
+            "/etc/passwd",
+            "uploads/../../backend/app/config.py",
+            "uploads/evidence/../../../etc/hosts",
+            "..",
+            ".",
+            "",
+        ],
+    )
+    def test_escaped_paths_never_resolve_outside_storage(self, escaped):
+        assert StorageService.resolve_within_storage(escaped) is None
+
+    @pytest.mark.parametrize("escaped", ["../../etc/passwd", "/etc/passwd", "../.env"])
+    def test_escaped_paths_never_return_bytes(self, escaped):
+        assert StorageService.read_image_as_bytes(escaped) is None
+
+    def test_a_real_stored_file_still_reads(self, storage_dir):
+        relative = "uploads/reference/x/panel.png"
+        path = storage_dir / "uploads/reference/x/panel.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(path), draw_panel(np.random.default_rng(1)))
+        assert StorageService.read_image_as_bytes(relative) is not None
+
+
+class TestTenantIsolation:
+    def test_input_preview_rejects_another_organizations_upload(self, client, db, admin):
+        """The lookup used to be by input id alone, so any authenticated caller
+        could read another tenant's upload by supplying a matching inspection id."""
+        other = Organization(name="Other Works", slug="other-works")
+        db.add(other)
+        db.flush()
+        equipment = Equipment(
+            organization_id=other.id, name="Pump", category="pump", location="Yard"
+        )
+        db.add(equipment)
+        db.flush()
+        inspection = Inspection(
+            equipment_id=equipment.id,
+            organization_id=other.id,
+            inspector_id=admin.id,
+        )
+        db.add(inspection)
+        db.flush()
+        stored = InspectionInput(
+            inspection_id=inspection.id,
+            input_type="image",
+            filename="secret.png",
+            storage_path="uploads/inspections/other/secret.png",
+            file_size_bytes=1,
+            metadata_json={},
+        )
+        db.add(stored)
+        db.commit()
+
+        response = client.get(
+            f"/api/inspections/{inspection.id}/input/{stored.id}/preview"
+        )
+        assert response.status_code == 404, response.text
+
+    def test_frames_rejects_another_organizations_inspection(self, client, db, admin):
+        other = Organization(name="Frames Other", slug="frames-other")
+        db.add(other)
+        db.flush()
+        equipment = Equipment(
+            organization_id=other.id, name="Valve", category="valve", location="Yard"
+        )
+        db.add(equipment)
+        db.flush()
+        inspection = Inspection(
+            equipment_id=equipment.id,
+            organization_id=other.id,
+            inspector_id=admin.id,
+        )
+        db.add(inspection)
+        db.commit()
+
+        response = client.get(f"/api/inspections/{inspection.id}/frames")
+        assert response.status_code == 404, response.text
+
+
+class TestTicketTransitionGuard:
+    def _ticket(self, db, admin, status: TicketStatusEnum) -> MaintenanceTicket:
+        # The ticket must live in the caller's own organization: the endpoint scopes
+        # by org, so a ticket anywhere else correctly answers 404, not 409.
+        organization = db.get(Organization, admin.organization_id)
+        equipment = Equipment(
+            organization_id=organization.id,
+            name="Compressor",
+            category="compressor",
+            location="Bench",
+        )
+        db.add(equipment)
+        db.flush()  # assigns equipment.id
+
+        # Constructed only after the flush: the constructor reads equipment.id.
+        finding_owner = Inspection(
+            equipment_id=equipment.id,
+            organization_id=organization.id,
+            inspector_id=admin.id,
+        )
+        db.add(finding_owner)
+        db.flush()
+        from app.models.finding import Finding, FindingStatusEnum, SeverityEnum, VerificationStatusEnum
+
+        finding = Finding(
+            equipment_id=equipment.id,
+            inspection_id=finding_owner.id,
+            organization_id=organization.id,
+            category="discoloration",
+            description="test",
+            detection_method="test",
+            confidence=0.5,
+            severity=SeverityEnum.warning,
+            verification_status=VerificationStatusEnum.unverified,
+            resolution_state=FindingStatusEnum.pending_review,
+        )
+        db.add(finding)
+        db.flush()
+        ticket = MaintenanceTicket(
+            equipment_id=equipment.id,
+            finding_id=finding.id,
+            organization_id=organization.id,
+            priority="high",
+            description="test ticket",
+            status=status,
+        )
+        db.add(ticket)
+        db.commit()
+        return ticket
+
+    def test_cannot_close_a_ticket_that_was_never_verified(self, client, db, admin):
+        ticket = self._ticket(db, admin, TicketStatusEnum.awaiting_approval)
+        response = client.patch(
+            f"/api/tickets/{ticket.id}", json={"status": "closed"}
+        )
+        assert response.status_code == 409, response.text
+        assert "awaiting-approval" in response.text and "closed" in response.text
+
+    def test_a_legal_transition_still_succeeds(self, client, db, admin):
+        ticket = self._ticket(db, admin, TicketStatusEnum.awaiting_approval)
+        response = client.patch(f"/api/tickets/{ticket.id}", json={"status": "open"})
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "open"
+
+    def test_closed_is_terminal(self, client, db, admin):
+        ticket = self._ticket(db, admin, TicketStatusEnum.closed)
+        response = client.patch(
+            f"/api/tickets/{ticket.id}", json={"status": "in-progress"}
+        )
+        assert response.status_code == 409, response.text
+
+    def test_an_unknown_status_is_a_clean_400_not_a_500(self, client, db, admin):
+        """`TicketStatusEnum("in_progress")` raises; that must not escape the handler."""
+        ticket = self._ticket(db, admin, TicketStatusEnum.awaiting_approval)
+        response = client.patch(
+            f"/api/tickets/{ticket.id}", json={"status": "in_progress"}
+        )
+        assert response.status_code == 400, response.text
+        assert "not a ticket status" in response.text
+
+
+class TestCapabilitiesEndpoint:
+    def test_reports_unimplemented_features_as_unimplemented(self, client):
+        body = client.get("/api/system/capabilities").json()
+        by_name = {feature["name"]: feature for feature in body["features"]}
+        # These do not exist. If someone later builds them, this assertion is the
+        # prompt to update the list deliberately rather than let the UI drift.
+        for absent in (
+            "per_frame_defect_tracking",
+            "live_camera_input",
+            "language_model_planner",
+            "real_world_accuracy_claim",
+        ):
+            assert by_name[absent]["implemented"] is False, absent
+        assert body["integrations"]["aws_worker"] is False
+        assert body["integrations"]["cool_integration"] is False
+        assert body["queue"]["instrumented"] is False
+
+    def test_opencv_version_matches_the_imported_module(self, client):
+        import cv2
+
+        body = client.get("/api/system/capabilities").json()
+        assert body["opencv"]["version"] == cv2.__version__
+
+
+class TestAuthEndpoints:
+    def test_first_registrant_becomes_administrator(self, client, db):
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "email": "first-capability@example.com",
+                "password": "a-long-enough-password",
+                "name": "First User",
+                "organization_name": "First Org",
+            },
+        )
+        assert response.status_code in (201, 400), response.text
+        if response.status_code == 201:
+            assert response.json()["user"]["role"] == "administrator"
+
+    def test_health_reports_the_real_schema_revision(self, client):
+        body = client.get("/health").json()
+        assert body["schema_revision"], "revision must come from Alembic, not a constant"

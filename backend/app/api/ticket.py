@@ -175,7 +175,18 @@ async def update_ticket(
     update_data = data.model_dump(exclude_unset=True)
 
     if "status" in update_data and update_data["status"] is not None:
-        requested = TicketStatusEnum(update_data["status"])
+        try:
+            requested = TicketStatusEnum(update_data["status"])
+        except ValueError:
+            # An unrecognised status used to raise out of the handler and surface as
+            # a 500, which is indistinguishable from a server fault.
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"'{update_data['status']}' is not a ticket status. Valid: "
+                    f"{[member.value for member in TicketStatusEnum]}"
+                ),
+            )
         if requested != old_status:
             permitted = TICKET_TRANSITIONS.get(old_status, frozenset())
             if requested not in permitted:
