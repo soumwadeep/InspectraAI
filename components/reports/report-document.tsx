@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { entry, stagger } from "@/lib/motion/presets";
-import type { CountedGroup, ReportModel, ReportSourceState } from "./report-data";
+import type { CountedGroup, ReportModel, ReportSourceState, SectionScope } from "./report-data";
 
 function num(value: number | undefined, digits = 3): string {
   if (value === undefined) return "not measured";
@@ -77,19 +77,19 @@ function SectionShell({
   );
 }
 
-function WindowLine({
-  inWindow,
-  total,
-  undated,
-}: {
-  inWindow: number;
-  total: number;
-  undated: number;
-}) {
+/**
+ * How many rows a section covers, phrased by provenance: a SQL count is the
+ * whole organization in the window, a list-page count is only what a capped
+ * endpoint returned, and saying so is the difference between a figure and a
+ * misleading one.
+ */
+function WindowLine({ scope }: { scope: SectionScope }) {
   return (
     <p className="telemetry text-sm text-secondary-text">
-      {inWindow} of {total} returned rows in window
-      {undated > 0 ? ` · ${undated} row(s) had no readable timestamp and were excluded` : ""}
+      {scope.counted_by === "sql"
+        ? `${scope.inWindow} row(s) counted in SQL over the whole organization`
+        : `${scope.inWindow} of ${scope.total} returned rows in window`}
+      {scope.undated > 0 ? ` · ${scope.undated} row(s) had no readable timestamp and were excluded` : ""}
     </p>
   );
 }
@@ -123,23 +123,38 @@ export function ReportDocument({ model }: { model: ReportModel }) {
           <CardContent className="space-y-2 text-sm text-secondary-text">
             <p>
               <span className="text-kicker uppercase">Window</span> {model.window.label}
-              {model.windowStart
-                ? ` — from ${model.windowStart.toISOString().slice(0, 10)} to generation time`
-                : " — every row the list endpoints returned"}
+              {model.serverScope?.window_start
+                ? ` — from ${model.serverScope.window_start.slice(0, 10)} to generation time, counted server-side`
+                : model.windowStart
+                  ? ` — from ${model.windowStart.toISOString().slice(0, 10)} to generation time`
+                  : " — every row the sources returned"}
             </p>
             <p>
               <span className="text-kicker uppercase">Generated</span>{" "}
-              <span className="telemetry">{model.generatedAt.toISOString()}</span> (browser clock)
+              <span className="telemetry">
+                {model.serverScope?.generated_at ?? model.generatedAt.toISOString()}
+              </span>{" "}
+              ({model.serverScope ? "API clock" : "browser clock — the API did not answer"})
             </p>
             <p className="text-xs">
-              Built from rows returned by <code className="font-mono">GET /api/inspections</code>,{" "}
-              <code className="font-mono">/api/findings</code>, <code className="font-mono">/api/tickets</code>,{" "}
-              <code className="font-mono">/api/agent/runs</code> and <code className="font-mono">/api/benchmarks</code>.
-              Those endpoints cap their lists (API defaults: findings 100, tickets 100, inspections
-              50, agent runs 50), so this report covers the rows those calls returned — a history
-              longer than the cap is truncated at the cap, and each section states how many rows
-              were available. <code className="font-mono">/api/benchmarks</code> has no cap and is
-              newest-first.
+              {model.serverScope ? (
+                <>
+                  Inspections, findings, tickets and agent runs are{" "}
+                  {model.serverScope.aggregation.toLowerCase()}. Benchmark metrics read{" "}
+                  <code className="font-mono">GET /api/benchmarks</code>, which is uncapped and
+                  newest-first.
+                </>
+              ) : (
+                <>Built from rows returned by <code className="font-mono">GET /api/inspections</code>,{" "}
+                <code className="font-mono">/api/findings</code>, <code className="font-mono">/api/tickets</code>,{" "}
+                <code className="font-mono">/api/agent/runs</code> and <code className="font-mono">/api/benchmarks</code>.
+                Those endpoints cap their lists (API defaults: findings 100, tickets 100, inspections
+                50, agent runs 50), so this report covers the rows those calls returned — a history
+                longer than the cap is truncated at the cap, and each section states how many rows
+                were available. <code className="font-mono">/api/benchmarks</code> has no cap and is
+                newest-first.
+                </>
+              )}
             </p>
           </CardContent>
         </Card>
@@ -148,13 +163,13 @@ export function ReportDocument({ model }: { model: ReportModel }) {
       <SectionShell
         index="01"
         title="Inspections"
-        empty={inspections.inspections.inWindow.length === 0}
+        empty={inspections.scope.inWindow === 0}
         unavailable={model.sources.inspections}
       >
         <WindowLine
-          inWindow={inspections.inspections.inWindow.length}
-          total={inspections.inspections.totalReturned}
-          undated={inspections.inspections.undated}
+          scope={inspections.scope}
+          
+          
         />
         <TallyRow title="Status" groups={inspections.byStatus} />
         <p className="text-sm text-secondary-text">
@@ -174,13 +189,13 @@ export function ReportDocument({ model }: { model: ReportModel }) {
       <SectionShell
         index="02"
         title="Findings"
-        empty={findings.findings.inWindow.length === 0}
+        empty={findings.scope.inWindow === 0}
         unavailable={model.sources.findings}
       >
         <WindowLine
-          inWindow={findings.findings.inWindow.length}
-          total={findings.findings.totalReturned}
-          undated={findings.findings.undated}
+          scope={findings.scope}
+          
+          
         />
         <TallyRow title="Severity" groups={findings.bySeverity} />
         <TallyRow title="Category" groups={findings.byCategory} />
@@ -191,13 +206,13 @@ export function ReportDocument({ model }: { model: ReportModel }) {
       <SectionShell
         index="03"
         title="Maintenance tickets"
-        empty={tickets.tickets.inWindow.length === 0}
+        empty={tickets.scope.inWindow === 0}
         unavailable={model.sources.tickets}
       >
         <WindowLine
-          inWindow={tickets.tickets.inWindow.length}
-          total={tickets.tickets.totalReturned}
-          undated={tickets.tickets.undated}
+          scope={tickets.scope}
+          
+          
         />
         <TallyRow title="Status" groups={tickets.byStatus} />
         <TallyRow title="Priority" groups={tickets.byPriority} />
@@ -210,13 +225,13 @@ export function ReportDocument({ model }: { model: ReportModel }) {
       <SectionShell
         index="04"
         title="Agent runs"
-        empty={agentRuns.runs.inWindow.length === 0}
+        empty={agentRuns.scope.inWindow === 0}
         unavailable={model.sources.agentRuns}
       >
         <WindowLine
-          inWindow={agentRuns.runs.inWindow.length}
-          total={agentRuns.runs.totalReturned}
-          undated={agentRuns.runs.undated}
+          scope={agentRuns.scope}
+          
+          
         />
         <TallyRow title="Status" groups={agentRuns.byStatus} />
         <p className="telemetry text-sm text-secondary-text">
@@ -245,10 +260,16 @@ export function ReportDocument({ model }: { model: ReportModel }) {
       >
         {benchmarks.runs.inWindow.length > 0 && (
           <>
+            {/* Benchmarks stay a list read on purpose: the section needs the row
+                objects to parse the latest run's metrics, and /api/benchmarks is
+                uncapped and newest-first, so "returned rows" is accurate here. */}
             <WindowLine
-              inWindow={benchmarks.runs.inWindow.length}
-              total={benchmarks.runs.totalReturned}
-              undated={benchmarks.runs.undated}
+              scope={{
+                inWindow: benchmarks.runs.inWindow.length,
+                total: benchmarks.runs.totalReturned,
+                undated: benchmarks.runs.undated,
+                counted_by: "list-page",
+              }}
             />
             {benchmarks.latest ? (
               <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">

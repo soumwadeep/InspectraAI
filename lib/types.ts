@@ -233,3 +233,51 @@ export interface MetricData {
   change: string;
   trend: "up" | "down" | "neutral";
 }
+
+/** Payload of `GET /api/reports/organization`. */
+export interface ServerReport {
+  scope: {
+    organization_id: string;
+    organization_name: string | null;
+    requested_by: string;
+    role: string;
+    window_days: number | null;
+    window_start: string | null;
+    generated_at: string;
+    assembled_by: string;
+    aggregation: string;
+  };
+  inspections: {
+    total: number;
+    by_status: Record<string, number>;
+    duration: { measured: number; min_ms: number | null; median_ms: number | null; max_ms: number | null; mean_ms: number | null };
+  };
+  findings: {
+    total: number;
+    by_severity: Record<string, number>;
+    by_category: Record<string, number>;
+    by_verification: Record<string, number>;
+    by_resolution: Record<string, number>;
+  };
+  tickets: {
+    total: number;
+    by_status: Record<string, number>;
+    by_priority: Record<string, number>;
+    open: number;
+    overdue: number;
+  };
+  agent_runs: {
+    total: number;
+    by_status: Record<string, number>;
+    iterations: number;
+    budget_used: number;
+    tool_calls: number;
+    duration: { measured: number; min_ms: number | null; median_ms: number | null; max_ms: number | null; mean_ms: number | null };
+  };
+  equipment: {
+    total: number;
+    by_status: Record<string, number>;
+    archived: number;
+  };
+}
+

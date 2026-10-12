@@ -8,6 +8,7 @@ import {
   MaintenanceTicket,
   ApprovalRecord,
   BenchmarkRun,
+  ServerReport,
 } from "./types";
 
 // Same-origin by default: requests go to `/backend-api/*` and the Next.js server
@@ -644,6 +645,8 @@ export const api = {
       manufacturer?: string;
       model?: string;
       serialNumber?: string;
+      installationDate?: string;
+      inspectionSchedule?: string;
     }): Promise<Equipment> => {
       const res = await request<BackendEquipment>("/api/equipment", {
         method: "POST",
@@ -655,6 +658,8 @@ export const api = {
           manufacturer: data.manufacturer,
           model: data.model,
           serial_number: data.serialNumber,
+          installation_date: data.installationDate,
+          inspection_schedule: data.inspectionSchedule,
         }),
       });
       return adaptEquipment(res);
@@ -778,6 +783,19 @@ export const api = {
   analytics: {
     overview: async (days = 30): Promise<AnalyticsOverview> => {
       return request<AnalyticsOverview>(`/api/analytics/overview?days=${days}`);
+    },
+  },
+
+  // ---------- Reports API ----------
+  reports: {
+    /**
+     * Server-aggregated organization report. Counts arrive as SQL GROUP BY
+     * results, so they cover every row in the organization rather than the
+     * first capped page of a list endpoint.
+     */
+    organization: async (days?: number): Promise<ServerReport> => {
+      const query = days ? `?days=${days}` : "";
+      return request<ServerReport>(`/api/reports/organization${query}`);
     },
   },
 

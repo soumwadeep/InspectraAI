@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, AnalyticsOverview, SystemHealth } from "./api";
-import { Equipment, Finding, MaintenanceTicket, Inspection, AgentRun, BenchmarkRun } from "./types";
+import { Equipment, Finding, MaintenanceTicket, Inspection, AgentRun, BenchmarkRun, ServerReport } from "./types";
 
 // ---- Equipment hooks ----
 
@@ -186,5 +186,14 @@ export function useAnalyticsOverview(days: number = 30) {
     queryKey: ["analytics-overview", days],
     queryFn: () => api.analytics.overview(days),
     staleTime: 60 * 1000,
+  });
+}
+
+/** Server-aggregated organization report. `days: null` counts the whole history. */
+export function useOrganizationReport(days: number | null) {
+  return useQuery<ServerReport, Error>({
+    queryKey: ["organization-report", days],
+    queryFn: () => api.reports.organization(days ?? undefined),
+    staleTime: 30 * 1000,
   });
 }

@@ -104,6 +104,7 @@ from app.api.analytics import router as analytics_router
 from app.api.vision import router as vision_router
 from app.api.benchmark import router as benchmark_router
 from app.api.system import router as system_router
+from app.api.report import router as report_router
 
 app.include_router(auth_router)
 app.include_router(admin_router)
@@ -116,6 +117,7 @@ app.include_router(analytics_router)
 app.include_router(vision_router)
 app.include_router(benchmark_router)
 app.include_router(system_router)
+app.include_router(report_router)
 
 
 # ---- Root ----

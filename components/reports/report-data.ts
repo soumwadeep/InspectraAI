@@ -1,15 +1,27 @@
 /**
- * Report assembly from rows the API already returned.
+ * Report assembly.
  *
  * A report section is only ever a grouping of real rows: counts, min/median/max
  * over measured durations, tallies of statuses. There is no summary prose here
  * that is not literally derived from the rows in scope, and a section with no
- * rows says so explicitly. Row sources (with their API default caps) are listed
- * in the scope section so a reader knows the report covers the rows the
- * endpoints returned, not an unbounded history.
+ * rows says so explicitly.
+ *
+ * Four of the five sections prefer `GET /api/reports/organization`, which counts
+ * with SQL over the whole organization. The list endpoints they replaced cap at
+ * 50-100 rows, so a growing workspace would have got a report describing a
+ * truncated slice of itself while looking like a complete one. When that
+ * endpoint is unavailable the sections fall back to counting the rows a capped
+ * list returned, and `counted_by` makes the difference visible in the output.
  */
 
-import type { AgentRun, BenchmarkRun, Finding, Inspection, MaintenanceTicket } from "@/lib/types";
+import type {
+  AgentRun,
+  BenchmarkRun,
+  Finding,
+  Inspection,
+  MaintenanceTicket,
+  ServerReport,
+} from "@/lib/types";
 import { parseBenchmarkResults } from "@/components/benchmarks/benchmark-results";
 
 export interface ReportWindow {
@@ -45,14 +57,30 @@ export interface WindowedRows<T> {
   totalReturned: number;
 }
 
+/**
+ * How many rows a section covers, and what counted them.
+ *
+ * `counted_by: "sql"` means the number came from `GET /api/reports/organization`,
+ * which aggregates over every row in the organization — so it cannot be truncated
+ * by a list cap. `"list-page"` means it was counted in the browser from the rows a
+ * capped list endpoint returned, and the text says exactly that.
+ */
+export interface SectionScope {
+  inWindow: number;
+  /** Rows the source saw in total; equals inWindow for a SQL count. */
+  total: number;
+  undated: number;
+  counted_by: "sql" | "list-page";
+}
+
 export interface InspectionSection {
-  inspections: WindowedRows<Inspection>;
+  scope: SectionScope;
   byStatus: CountedGroup[];
   durations: DurationStats;
 }
 
 export interface FindingsSection {
-  findings: WindowedRows<Finding>;
+  scope: SectionScope;
   bySeverity: CountedGroup[];
   byCategory: CountedGroup[];
   byVerification: CountedGroup[];
@@ -60,7 +88,7 @@ export interface FindingsSection {
 }
 
 export interface TicketsSection {
-  tickets: WindowedRows<MaintenanceTicket>;
+  scope: SectionScope;
   byStatus: CountedGroup[];
   byPriority: CountedGroup[];
   /** Open items whose due date passed before the report was generated. */
@@ -68,7 +96,7 @@ export interface TicketsSection {
 }
 
 export interface AgentRunsSection {
-  runs: WindowedRows<AgentRun>;
+  scope: SectionScope;
   byStatus: CountedGroup[];
   total_iterations: number;
   total_budget_used: number;
@@ -110,6 +138,8 @@ export interface ReportModel {
   window: ReportWindow;
   windowStart: Date | null;
   organization: { id: string; email: string; role: string } | null;
+  /** `scope` from GET /api/reports/organization; null when that call failed. */
+  serverScope: ServerReport["scope"] | null;
   sources: Record<ReportSourceKey, ReportSourceState>;
   inspections: InspectionSection;
   findings: FindingsSection;
@@ -123,6 +153,11 @@ export interface ReportInputs {
   generatedAt: Date;
   organization: { id: string; email: string; role: string } | null;
   sourceErrors: Record<ReportSourceKey, boolean>;
+  /**
+   * When present, the four organization sections are counted by SQL and the list
+   * endpoints below are used only for the benchmark section and the raw exports.
+   */
+  serverReport: ServerReport | null;
   inspections: Inspection[] | null;
   findings: Finding[] | null;
   tickets: MaintenanceTicket[] | null;
@@ -179,9 +214,27 @@ function durationStats(valuesMs: number[]): DurationStats {
   return { measured: sorted.length, min_ms: sorted[0], median_ms: median, max_ms: sorted[sorted.length - 1] };
 }
 
+/** A `{value: count}` SQL GROUP BY result, ordered like the client tally. */
+function fromTally(tallyMap: Record<string, number>): CountedGroup[] {
+  return Object.entries(tallyMap)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+function serverDuration(stats: ServerReport["inspections"]["duration"]): DurationStats {
+  return {
+    measured: stats.measured,
+    min_ms: stats.min_ms ?? undefined,
+    median_ms: stats.median_ms ?? undefined,
+    max_ms: stats.max_ms ?? undefined,
+  };
+}
+
 export function buildReportModel(input: ReportInputs): ReportModel {
   const windowStart =
     input.window.days === null ? null : input.generatedAt.getTime() - input.window.days * 86_400_000;
+
+  const server = input.serverReport;
 
   const inspections = windowRows(input.inspections, (row) => row.startTime, windowStart);
   const findings = windowRows(input.findings, (row) => row.createdAt, windowStart);
@@ -236,40 +289,79 @@ export function buildReportModel(input: ReportInputs): ReportModel {
     window: input.window,
     windowStart: windowStart === null ? null : new Date(windowStart),
     organization: input.organization,
+    serverScope: server?.scope ?? null,
     sources: {
-      inspections: { endpoint: "GET /api/inspections", failed: input.sourceErrors.inspections },
-      findings: { endpoint: "GET /api/findings", failed: input.sourceErrors.findings },
-      tickets: { endpoint: "GET /api/tickets", failed: input.sourceErrors.tickets },
-      agentRuns: { endpoint: "GET /api/agent/runs", failed: input.sourceErrors.agentRuns },
+      inspections: {
+        endpoint: server ? "GET /api/reports/organization" : "GET /api/inspections",
+        failed: input.sourceErrors.inspections,
+      },
+      findings: {
+        endpoint: server ? "GET /api/reports/organization" : "GET /api/findings",
+        failed: input.sourceErrors.findings,
+      },
+      tickets: {
+        endpoint: server ? "GET /api/reports/organization" : "GET /api/tickets",
+        failed: input.sourceErrors.tickets,
+      },
+      agentRuns: {
+        endpoint: server ? "GET /api/reports/organization" : "GET /api/agent/runs",
+        failed: input.sourceErrors.agentRuns,
+      },
       benchmarks: { endpoint: "GET /api/benchmarks", failed: input.sourceErrors.benchmarks },
     },
     inspections: {
-      inspections,
-      byStatus: tally(inspections.inWindow, (row) => row.status),
-      durations: durationStats(
-        inspections.inWindow.map((row) => row.duration ?? 0),
-      ),
+      scope: server
+        ? { inWindow: server.inspections.total, total: server.inspections.total, undated: 0, counted_by: "sql" }
+        : { inWindow: inspections.inWindow.length, total: inspections.totalReturned, undated: inspections.undated, counted_by: "list-page" },
+      byStatus: server
+        ? fromTally(server.inspections.by_status)
+        : tally(inspections.inWindow, (row) => row.status),
+      durations: server
+        ? serverDuration(server.inspections.duration)
+        : durationStats(inspections.inWindow.map((row) => row.duration ?? 0)),
     },
     findings: {
-      findings,
-      bySeverity: tally(findings.inWindow, (row) => row.severity),
-      byCategory: tally(findings.inWindow, (row) => row.category),
-      byVerification: tally(findings.inWindow, (row) => row.verificationStatus),
-      byResolutionState: tally(findings.inWindow, (row) => row.resolutionState),
+      scope: server
+        ? { inWindow: server.findings.total, total: server.findings.total, undated: 0, counted_by: "sql" }
+        : { inWindow: findings.inWindow.length, total: findings.totalReturned, undated: findings.undated, counted_by: "list-page" },
+      bySeverity: server
+        ? fromTally(server.findings.by_severity)
+        : tally(findings.inWindow, (row) => row.severity),
+      byCategory: server
+        ? fromTally(server.findings.by_category)
+        : tally(findings.inWindow, (row) => row.category),
+      byVerification: server
+        ? fromTally(server.findings.by_verification)
+        : tally(findings.inWindow, (row) => row.verificationStatus),
+      byResolutionState: server
+        ? fromTally(server.findings.by_resolution)
+        : tally(findings.inWindow, (row) => row.resolutionState),
     },
     tickets: {
-      tickets,
-      byStatus: tally(tickets.inWindow, (row) => row.status),
-      byPriority: tally(tickets.inWindow, (row) => row.priority),
-      overdue,
+      scope: server
+        ? { inWindow: server.tickets.total, total: server.tickets.total, undated: 0, counted_by: "sql" }
+        : { inWindow: tickets.inWindow.length, total: tickets.totalReturned, undated: tickets.undated, counted_by: "list-page" },
+      byStatus: server
+        ? fromTally(server.tickets.by_status)
+        : tally(tickets.inWindow, (row) => row.status),
+      byPriority: server
+        ? fromTally(server.tickets.by_priority)
+        : tally(tickets.inWindow, (row) => row.priority),
+      overdue: server ? server.tickets.overdue : overdue,
     },
     agentRuns: {
-      runs,
-      byStatus: tally(runs.inWindow, (row) => row.status),
-      total_iterations: totalIterations,
-      total_budget_used: totalBudget,
-      total_tool_calls: totalToolCalls,
-      durations: durationStats(runDurations),
+      scope: server
+        ? { inWindow: server.agent_runs.total, total: server.agent_runs.total, undated: 0, counted_by: "sql" }
+        : { inWindow: runs.inWindow.length, total: runs.totalReturned, undated: runs.undated, counted_by: "list-page" },
+      byStatus: server
+        ? fromTally(server.agent_runs.by_status)
+        : tally(runs.inWindow, (row) => row.status),
+      total_iterations: server ? server.agent_runs.iterations : totalIterations,
+      total_budget_used: server ? server.agent_runs.budget_used : totalBudget,
+      total_tool_calls: server ? server.agent_runs.tool_calls : totalToolCalls,
+      durations: server
+        ? serverDuration(server.agent_runs.duration)
+        : durationStats(runDurations),
     },
     benchmarks: { runs: benchmarks, latest },
   };
@@ -306,6 +398,22 @@ function windowedLine(label: string, rows: WindowedRows<unknown>, undatedLabel =
 }
 
 /**
+ * One line describing how many rows a section covers.
+ *
+ * The phrasing differs by provenance on purpose: a SQL count is the whole
+ * organization in the window, while a list-page count is only what a capped
+ * endpoint happened to return. Saying "of N returned rows" about a SQL count
+ * would understate it, and saying "all rows" about a list page would lie.
+ */
+function scopeLine(label: string, scope: SectionScope): string {
+  if (scope.counted_by === "sql") {
+    return `${scope.inWindow} ${label}(s) counted in SQL over the whole organization in this window`;
+  }
+  const base = `${scope.inWindow} of ${scope.total} returned ${label}(s) fell inside the window`;
+  return scope.undated > 0 ? `${base}; ${scope.undated} undated row(s) excluded from windowing` : base;
+}
+
+/**
  * Text form of the report. Every line is either a fixed structural label or a
  * number derived from returned rows — nothing is summarised in prose the data
  * does not literally say.
@@ -313,7 +421,11 @@ function windowedLine(label: string, rows: WindowedRows<unknown>, undatedLabel =
 export function reportToText(model: ReportModel): string {
   const lines: string[] = [];
   lines.push("INSPECTRA AI — OPERATIONS REPORT");
-  lines.push(`Generated (browser clock): ${model.generatedAt.toISOString()}`);
+  lines.push(
+    model.serverScope
+      ? `Generated (server clock): ${model.serverScope.generated_at}`
+      : `Generated (browser clock): ${model.generatedAt.toISOString()}`,
+  );
   lines.push(
     `Window: ${model.window.label}${
       model.windowStart ? ` (from ${model.windowStart.toISOString()})` : ""
@@ -325,7 +437,9 @@ export function reportToText(model: ReportModel): string {
       : "Organization: not signed in — the API scopes every row to the session's organization",
   );
   lines.push(
-    "Sources: GET /api/inspections, /api/findings, /api/tickets, /api/agent/runs, /api/benchmarks (API default list caps apply; the report covers only the rows those endpoints returned).",
+    model.serverScope
+      ? `Sources: ${model.serverScope.aggregation}. Endpoint: GET /api/reports/organization. Benchmark section reads GET /api/benchmarks.`
+      : "Sources: GET /api/inspections, /api/findings, /api/tickets, /api/agent/runs, /api/benchmarks (API default list caps apply; the report covers only the rows those endpoints returned). GET /api/reports/organization did not answer, so every count below is from a capped list page.",
   );
   lines.push("");
 
@@ -333,11 +447,11 @@ export function reportToText(model: ReportModel): string {
   if (model.sources.inspections.failed) {
     lines.push(`Data unavailable — ${model.sources.inspections.endpoint} failed. Not zero: missing.`);
   } else {
-  if (model.inspections.inspections.inWindow.length === 0) {
+  if (model.inspections.scope.inWindow === 0) {
     lines.push("No inspections were recorded in this window.");
   }
   lines.push(
-    windowedLine("inspection", model.inspections.inspections) +
+    scopeLine("inspection", model.inspections.scope) +
       ` (windowed on started_at)`,
   );
   lines.push(`Statuses — ${groups(model.inspections.byStatus)}`);
@@ -349,10 +463,10 @@ export function reportToText(model: ReportModel): string {
   if (model.sources.findings.failed) {
     lines.push(`Data unavailable — ${model.sources.findings.endpoint} failed. Not zero: missing.`);
   } else {
-  if (model.findings.findings.inWindow.length === 0) {
+  if (model.findings.scope.inWindow === 0) {
     lines.push("No findings were recorded in this window.");
   }
-  lines.push(windowedLine("finding", model.findings.findings) + " (windowed on created_at)");
+  lines.push(scopeLine("finding", model.findings.scope) + " (windowed on created_at)");
   lines.push(`Severity — ${groups(model.findings.bySeverity)}`);
   lines.push(`Category — ${groups(model.findings.byCategory)}`);
   lines.push(`Verification — ${groups(model.findings.byVerification)}`);
@@ -364,10 +478,10 @@ export function reportToText(model: ReportModel): string {
   if (model.sources.tickets.failed) {
     lines.push(`Data unavailable — ${model.sources.tickets.endpoint} failed. Not zero: missing.`);
   } else {
-  if (model.tickets.tickets.inWindow.length === 0) {
+  if (model.tickets.scope.inWindow === 0) {
     lines.push("No tickets were raised in this window.");
   }
-  lines.push(windowedLine("ticket", model.tickets.tickets) + " (windowed on created_at)");
+  lines.push(scopeLine("ticket", model.tickets.scope) + " (windowed on created_at)");
   lines.push(`Statuses — ${groups(model.tickets.byStatus)}`);
   lines.push(`Priorities — ${groups(model.tickets.byPriority)}`);
   lines.push(
@@ -380,10 +494,10 @@ export function reportToText(model: ReportModel): string {
   if (model.sources.agentRuns.failed) {
     lines.push(`Data unavailable — ${model.sources.agentRuns.endpoint} failed. Not zero: missing.`);
   } else {
-  if (model.agentRuns.runs.inWindow.length === 0) {
+  if (model.agentRuns.scope.inWindow === 0) {
     lines.push("No agent runs were recorded in this window.");
   }
-  lines.push(windowedLine("agent run", model.agentRuns.runs) + " (windowed on started_at)");
+  lines.push(scopeLine("agent run", model.agentRuns.scope) + " (windowed on started_at)");
   lines.push(`Statuses — ${groups(model.agentRuns.byStatus)}`);
   lines.push(
     `Totals — ${model.agentRuns.total_iterations} iterations · ${num(

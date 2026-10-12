@@ -6,13 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Download, RefreshCw } from "@/components/icons";
+import { AlertTriangle, CheckCircle, Download, RefreshCw } from "@/components/icons";
 import {
   useAgentRuns,
   useBenchmarks,
   useEquipment,
   useFindings,
   useInspections,
+  useOrganizationReport,
   useTickets,
 } from "@/lib/hooks";
 import { useAuth } from "@/lib/auth-context";
@@ -56,6 +57,8 @@ export default function ReportsPage() {
   const benchmarks = useBenchmarks();
 
   const [window_, setWindow] = useState<ReportWindow>(REPORT_WINDOWS[1]);
+  // Re-keyed by the window, so switching 7d/30d/90d/all refetches the aggregates.
+  const serverReport = useOrganizationReport(window_.days);
   const [generatedAt, setGeneratedAt] = useState(() => new Date());
 
   const sourceErrors = {
@@ -75,6 +78,7 @@ export default function ReportsPage() {
           ? { id: user.organizationId, email: user.email, role: user.role }
           : null,
         sourceErrors,
+        serverReport: serverReport.data ?? null,
         inspections: inspections.data ?? null,
         findings: findings.data ?? null,
         tickets: tickets.data ?? null,
@@ -86,6 +90,7 @@ export default function ReportsPage() {
       window_,
       generatedAt,
       user,
+      serverReport.data,
       inspections.data,
       findings.data,
       tickets.data,
@@ -299,19 +304,48 @@ export default function ReportsPage() {
         </Badge>
       </motion.div>
 
+      {/* Provenance, not a warning: the aggregates are now counted by SQL, so the
+          only thing left to disclose is which section came from where. */}
       <motion.div
-        className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 p-4"
+        className={
+          serverReport.data
+            ? "flex items-start gap-3 rounded-lg border border-border bg-surface/40 p-4"
+            : "flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 p-4"
+        }
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+        {serverReport.data ? (
+          <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+        ) : (
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+        )}
         <div className="text-sm">
-          <p className="font-medium text-primary-text">Assembled in the browser from live API rows</p>
+          <p className="font-medium text-primary-text">
+            {serverReport.data
+              ? "Counted by the API, not by this page"
+              : "Server aggregation unavailable — counted from list pages"}
+          </p>
           <p className="text-secondary-text">
-            There is no server-side report endpoint and no PDF writer, so neither is offered.
-            Windowing uses row timestamps (<code className="font-mono">started_at</code> /{" "}
-            <code className="font-mono">created_at</code>) against the browser clock shown above.
-            List endpoints cap how many rows they return, which the scope section states.
+            {serverReport.data ? (
+              <>
+                Inspections, findings, tickets and agent runs are SQL aggregates from{" "}
+                <code className="font-mono">GET /api/reports/organization</code>, so they cover
+                every row in this organization inside the window rather than the first page of a
+                capped list. The benchmark section reads{" "}
+                <code className="font-mono">GET /api/benchmarks</code> because it needs the stored
+                run rows to report their metrics. Window boundary:{" "}
+                <span className="telemetry">{serverReport.data.scope.window_start ?? "no window — whole history"}</span>{" "}
+                (server clock).
+              </>
+            ) : (
+              <>
+                <code className="font-mono">GET /api/reports/organization</code> did not answer, so
+                every count below was tallied in the browser from the rows the capped list
+                endpoints returned (findings 100, tickets 100, inspections 50, agent runs 50). A
+                workspace larger than those caps is being described by a truncated slice.
+              </>
+            )}
           </p>
         </div>
       </motion.div>

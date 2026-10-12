@@ -288,3 +288,96 @@ class TestDatabaseUrlScheme:
         # Dialect resolution is what crashed; building the URL object does not
         # connect, so this stays a unit test with no database required.
         assert create_engine(settings.database_url).dialect.name == "postgresql"
+
+
+class TestOrganizationReport:
+    """The report replaced browser-side tallying of capped list endpoints. Two
+    properties matter and neither is checked anywhere else: it must count every
+    row in the organization (not a page of them), and it must not count rows
+    belonging to another tenant."""
+
+    def _seed(self, db, admin, *, org_id=None, inspections=0, findings=0):
+        org_id = org_id or admin.organization_id
+        equipment = Equipment(
+            organization_id=org_id, name="Asset", category="pump", location="Yard"
+        )
+        db.add(equipment)
+        db.flush()
+        created = []
+        for _ in range(inspections):
+            inspection = Inspection(
+                equipment_id=equipment.id,
+                organization_id=org_id,
+                inspector_id=admin.id,
+                duration_ms=200,
+            )
+            db.add(inspection)
+            db.flush()
+            created.append(inspection)
+        from app.models.finding import Finding, FindingStatusEnum, SeverityEnum, VerificationStatusEnum
+
+        for inspection in created[:findings]:
+            db.add(Finding(
+                inspection_id=inspection.id,
+                equipment_id=equipment.id,
+                organization_id=org_id,
+                category="discoloration",
+                severity=SeverityEnum.warning,
+                verification_status=VerificationStatusEnum.unverified,
+                resolution_state=FindingStatusEnum.pending_review,
+                description="measured",
+                detection_method="change_detection",
+                confidence=0.7,
+            ))
+        db.commit()
+        return equipment
+
+    def test_counts_every_row_not_a_page_of_them(self, client, db, admin):
+        # 60 is past the 50-row cap on GET /api/inspections; a browser-tallied
+        # report would have reported 50 and looked complete.
+        self._seed(db, admin, inspections=60, findings=3)
+
+        body = client.get("/api/reports/organization").json()
+        assert body["inspections"]["total"] == 60, body["inspections"]
+        assert body["findings"]["total"] == 3
+
+    def test_another_tenants_rows_never_appear(self, client, db, admin):
+        other = Organization(name="Report Other", slug="report-other")
+        db.add(other)
+        db.flush()
+        self._seed(db, admin, inspections=2)
+        self._seed(db, admin, org_id=other.id, inspections=9)
+
+        body = client.get("/api/reports/organization").json()
+        assert body["inspections"]["total"] == 2, body["inspections"]
+
+    def test_histograms_carry_enum_values_not_python_names(self, client, db, admin):
+        self._seed(db, admin, inspections=4, findings=2)
+        body = client.get("/api/reports/organization").json()
+        # `pending_review` is the member name; the column stores `pending-review`.
+        assert body["findings"]["by_resolution"] == {"pending-review": 2}
+
+    def test_the_window_excludes_rows_outside_it(self, client, db, admin):
+        from datetime import datetime, timedelta
+
+        equipment = self._seed(db, admin, inspections=1)
+        db.add(Inspection(
+            equipment_id=equipment.id,
+            organization_id=admin.organization_id,
+            inspector_id=admin.id,
+            started_at=datetime.utcnow() - timedelta(days=400),
+            duration_ms=100,
+        ))
+        db.commit()
+
+        all_rows = client.get("/api/reports/organization").json()
+        last_30 = client.get("/api/reports/organization?days=30").json()
+        assert all_rows["inspections"]["total"] == 2
+        assert last_30["inspections"]["total"] == 1
+        assert last_30["scope"]["window_days"] == 30
+
+    def test_the_scope_names_the_caller_and_the_aggregation(self, client, db, admin):
+        body = client.get("/api/reports/organization").json()
+        assert body["scope"]["assembled_by"] == "server"
+        assert body["scope"]["requested_by"] == admin.email
+        assert body["scope"]["organization_id"] == admin.organization_id
