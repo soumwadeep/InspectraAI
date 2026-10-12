@@ -247,3 +247,44 @@ class TestBenchmarkShapeConsistency:
         # The corpus metadata must survive, or the numbers are unattributable.
         for key in ("pairs", "seed", "iou_threshold"):
             assert key in detail["results_json"]["corpus"], key
+
+
+class TestDatabaseUrlScheme:
+    """Coolify hands out `postgres://`, which SQLAlchemy 2.0 cannot load — the
+    container died on startup with
+    `NoSuchModuleError: Can't load plugin: sqlalchemy.dialects:postgres`."""
+
+    def test_coolify_scheme_is_rewritten_to_one_sqlalchemy_can_load(self):
+        from app.config import Settings
+
+        rewritten = Settings(
+            database_url="postgres://u:p%40ss@dbhost:5432/inspectraaidb"
+        ).database_url
+        assert rewritten.startswith("postgresql://")
+        # The percent-encoded password must survive untouched: decoding it here
+        # would break the very URL this exists to fix.
+        assert "p%40ss" in rewritten
+
+    def test_explicit_driver_choices_are_left_alone(self):
+        from app.config import Settings
+
+        for url in (
+            "postgresql+psycopg2://u:p@h:5432/d",
+            "postgresql+asyncpg://u:p@h:5432/d",
+            "sqlite:///inspectra.db",
+        ):
+            assert Settings(database_url=url).database_url == url
+
+    def test_the_rewritten_url_builds_a_real_engine(self):
+        from sqlalchemy.engine import create_engine, make_url
+
+        from app.config import Settings
+
+        settings = Settings(
+            database_url="postgres://u:p%40ss@h:5432/inspectraaidb"
+        )
+        url = make_url(settings.database_url)
+        assert url.drivername == "postgresql"
+        # Dialect resolution is what crashed; building the URL object does not
+        # connect, so this stays a unit test with no database required.
+        assert create_engine(settings.database_url).dialect.name == "postgresql"
