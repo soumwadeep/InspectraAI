@@ -76,6 +76,20 @@ def _schema_revision() -> str:
         return "migrations not applied"
 
 
+@app.get("/health/live")
+async def liveness_check():
+    """Liveness only: the process is up and the event loop is answering.
+
+    Deliberately touches nothing — no database, no OpenCV, no disk. The
+    container HEALTHCHECK probes this endpoint because `/health` opens two fresh
+    Postgres connections per call, and on a loaded host that is what makes a
+    probe time out against an application that is working fine. A liveness probe
+    that depends on a downstream service turns slow infrastructure into a
+    restart loop.
+    """
+    return {"status": "alive"}
+
+
 @app.get("/health")
 async def health_check():
     """Simple health endpoint for load balancers and monitoring."""

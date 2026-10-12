@@ -62,7 +62,16 @@ EXPOSE 8000
 # The probe must read the same variable the entrypoint binds to. Hardcoding 8000
 # made curl fail with "Failed to connect to localhost port 8000" against a
 # perfectly healthy app on $PORT, so Coolify rolled back a working deployment.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
-    CMD curl -fsS "http://127.0.0.1:${PORT:-8000}/health" || exit 1
+#
+# It probes /health/live, not /health: /health opens two Postgres connections per
+# call, and a deploy log showed "Health check exceeded timeout (5s)" while
+# uvicorn was already listening. A liveness probe must not depend on the database.
+#
+# start-period is generous because this host is a Raspberry Pi running ~25
+# containers: the entrypoint runs `alembic upgrade head` before uvicorn starts,
+# and the observed boot crossed Coolify's previous ~115s window with the app
+# reaching "Application startup complete" only after the rollback was decided.
+HEALTHCHECK --interval=15s --timeout=10s --start-period=180s --retries=6 \
+    CMD curl -fsS "http://127.0.0.1:${PORT:-8000}/health/live" || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

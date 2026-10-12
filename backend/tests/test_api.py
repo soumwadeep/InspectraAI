@@ -381,3 +381,39 @@ class TestOrganizationReport:
         assert body["scope"]["assembled_by"] == "server"
         assert body["scope"]["requested_by"] == admin.email
         assert body["scope"]["organization_id"] == admin.organization_id
+
+
+class TestLivenessProbe:
+    """The container HEALTHCHECK used to probe /health, which opens two Postgres
+    connections per call. A deploy log showed that probe exceeding its 5s timeout
+    against an application that had already finished starting — a liveness check
+    that depends on the database converts slow infrastructure into a restart
+    loop, so /health/live must stay free of downstream calls."""
+
+    def test_liveness_answers_without_touching_the_database(self, client, monkeypatch):
+        import app.database as database
+
+        def explode(*args, **kwargs):
+            raise AssertionError("liveness must not open a database connection")
+
+        monkeypatch.setattr(database, "check_db_connection", explode)
+        monkeypatch.setattr(database.engine, "connect", explode)
+
+        response = client.get("/health/live")
+        assert response.status_code == 200
+        assert response.json() == {"status": "alive"}
+
+    def test_the_rich_health_endpoint_still_reports_the_database(self, client):
+        """Liveness is cheap; readiness detail still belongs somewhere, and the
+        deployment verifier reads this one on purpose.
+
+        The suite builds its schema with create_all rather than Alembic, so the
+        revision field legitimately says "migrations not applied" here. Asserting
+        a revision would be asserting something this environment never did; what
+        matters is that the endpoint reports the database and the OpenCV version
+        it actually sees."""
+        body = client.get("/health").json()
+        assert body["database"] == "connected"
+        assert body["status"] == "healthy"
+        assert body["opencv"] == cv2.__version__
+        assert "schema_revision" in body
