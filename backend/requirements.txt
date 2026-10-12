@@ -11,6 +11,9 @@ python-jose[cryptography]==3.3.0
 # backend detection raises and every hash attempt fails.
 bcrypt>=4.2,<6
 email-validator==2.3.0
+# Imported directly by app/api/translate.py for the BHASHINI upstream call.
+# Previously satisfied only transitively through starlette's test client.
+httpx==0.28.1
 redis==5.2.1
 pillow==11.0.0
 numpy>=2.0.2

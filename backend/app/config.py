@@ -50,6 +50,19 @@ class Settings(BaseSettings):
     # Upload limits
     max_upload_mb: int = 100
 
+    # BHASHINI machine translation.
+    #
+    # Server-side only. These must never become NEXT_PUBLIC_* values: the Next.js
+    # client bundle inlines those at build time, so a key set there is readable
+    # by anyone who opens devtools on the deployed site and could spend the
+    # quota directly. The browser calls /api/translate and never sees a key.
+    bhashini_inference_api_key: str | None = None
+    bhashini_udyat_key: str | None = None
+    bhashini_inference_url: str = "https://dhruva-api.bhashini.gov.in/services/inference/pipeline"
+    bhashini_translation_service_id: str = "bhashini/iiith/nmt-all"
+    # Upstream timeout. Verified live: a 3-string batch returns well inside this.
+    bhashini_timeout_seconds: float = 20.0
+
     # Comma-separated browser origins allowed to call the API with credentials.
     cors_origins: str = "http://localhost:3000"
 

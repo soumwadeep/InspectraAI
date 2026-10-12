@@ -25,6 +25,12 @@ FEATURES = (
     ("language_model_planner", False, "the planner is rule-based over measured values; planner id is recorded per run"),
     ("benchmark_metrics", True, "precision/recall/F1/IoU over a labelled synthetic corpus"),
     ("real_world_accuracy_claim", False, "benchmark numbers describe the synthetic corpus only"),
+    # Machine translation is a neural model translating fixed UI strings. It is
+    # not a language model generating any part of this product's output, and the
+    # distinction is kept explicit in the copy rather than blurred by the word
+    # "AI" appearing next to both.
+    ("machine_translation_ui", True, "UI labels translated via the BHASHINI NMT pipeline; measured values, endpoints and identifiers are never translated"),
+    ("offline_app_shell", True, "service worker caches the shell and the last API reads; inspections still require the API"),
 )
 
 
@@ -90,7 +96,20 @@ async def capabilities() -> dict:
             "note": "processing is synchronous and in-process; there is no queue to report depth for",
         },
         "features": [
-            {"name": name, "implemented": implemented, "detail": detail}
+            {
+                "name": name,
+                "implemented": implemented,
+                # `implemented` means the code exists and runs. `available` means
+                # it works in *this* deployment. Machine translation is the one
+                # feature where those differ, because it needs a credential that
+                # may not be set here.
+                "available": (
+                    bool(settings.bhashini_inference_api_key)
+                    if name == "machine_translation_ui"
+                    else implemented
+                ),
+                "detail": detail,
+            }
             for name, implemented, detail in FEATURES
         ],
     }
