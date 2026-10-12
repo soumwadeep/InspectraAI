@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face {
+    font-family: 'Space Grotesk';
+    src: url('file:///Volumes/SoumwadeepSSD/Github Repos/InspectraAI/node_modules/@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2') format('woff2-variations');
+    font-weight: 300 700;
+  }
+  @font-face {
+    font-family: 'JetBrains Mono';
+    src: url('file:///Volumes/SoumwadeepSSD/Github Repos/InspectraAI/node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+    font-weight: 100 800;
+  }
+  :root {
+    --void:#050914; --panel:#0d1728; --raised:#111f34; --line:#1e3350;
+    --ink:#eaf4ff; --muted:#8ba3bd; --dim:#5a7592;
+    --cyan:#00d9ff; --violet:#8b5cf6; --green:#00e5a8; --red:#ff5263; --amber:#ffb547;
+    --disp:'Space Grotesk',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  @page { size: 1800px 1200px; margin: 0; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1800px;height:1200px;overflow:hidden}
+  body{background:radial-gradient(140% 110% at 78% -30%,#0f2338 0%,var(--void) 62%);color:var(--ink);font-family:var(--disp)}
+
+  /* grid: header + 4 columns + footer. Fixed tracks so nothing can push out of frame. */
+  .canvas{
+    width:1800px;height:1200px;display:grid;
+    grid-template-rows:96px 1fr 118px;
+    grid-template-columns:1fr;
+    padding:0 34px 0;
+  }
+  header{display:flex;align-items:center;gap:18px;padding:0 4px}
+  .mark{width:44px;height:44px;flex:none}
+  header h1{font-size:27px;font-weight:700;letter-spacing:-.8px}
+  header h1 span{color:var(--cyan)}
+  header .sub{font-size:13.5px;color:var(--muted);margin-top:2px;letter-spacing:.2px}
+  header .spacer{flex:1}
+  .legend{display:flex;gap:16px;align-items:center;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .legend i{display:inline-block;width:22px;height:0;border-top:2px solid var(--cyan);vertical-align:middle;margin-right:6px}
+  .legend .dashed i{border-top:2px dashed var(--red)}
+  .legend .vio i{border-top-color:var(--violet)}
+
+  .cols{display:grid;grid-template-columns:300px 232px 1fr 300px;gap:20px;min-height:0}
+  .col{display:flex;flex-direction:column;gap:12px;min-height:0}
+
+  .tier{font-family:var(--mono);font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim);padding-left:2px}
+
+  .box{background:linear-gradient(180deg,var(--raised),var(--panel));border:1px solid var(--line);border-radius:11px;padding:13px 14px}
+  .box.accent{border-color:rgba(0,217,255,.42);box-shadow:0 0 26px rgba(0,217,255,.07) inset}
+  .box.violet{border-color:rgba(139,92,246,.42)}
+  .box .bt{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .box .bd{font-size:11.4px;color:var(--muted);line-height:1.42;margin-top:5px}
+  .box .code{font-family:var(--mono);font-size:10.4px;color:var(--cyan);margin-top:6px;line-height:1.5}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);flex:none}
+  .dot.v{background:var(--violet)} .dot.g{background:var(--green)} .dot.r{background:var(--red)} .dot.a{background:var(--amber)}
+
+  .stack{display:flex;flex-direction:column;gap:12px;flex:1;min-height:0}
+  .grow{flex:1;min-height:0}
+
+  /* pipeline: the centrepiece */
+  .pipe{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px}
+  .step{background:rgba(0,217,255,.05);border:1px solid rgba(0,217,255,.26);border-radius:9px;padding:10px 11px;position:relative}
+  .step .n{font-family:var(--mono);font-size:9px;color:var(--cyan);font-weight:700;letter-spacing:.6px}
+  .step .t{font-size:12.6px;font-weight:700;margin-top:3px}
+  .step .m{font-family:var(--mono);font-size:9.6px;color:var(--muted);margin-top:4px;line-height:1.38}
+  .step:not(:last-child)::after{
+    content:'';position:absolute;right:-8px;top:50%;width:8px;height:2px;background:var(--cyan);opacity:.6}
+
+  .loopwrap{margin-top:11px;border:1px solid rgba(139,92,246,.4);border-radius:9px;padding:10px 12px;background:rgba(139,92,246,.06)}
+  .loopwrap .lt{font-size:12.8px;font-weight:700;color:#c4b0ff;display:flex;gap:8px;align-items:center}
+  .loopwrap .ld{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.42}
+  .loopwrap .code{font-family:var(--mono);font-size:9.8px;color:#a78bfa;margin-top:5px}
+
+  .pause{margin-top:11px;border:1px solid rgba(255,181,71,.45);border-radius:9px;padding:10px 12px;background:rgba(255,181,71,.07)}
+  .pause .lt{font-size:12.8px;font-weight:700;color:var(--amber);display:flex;gap:8px;align-items:center}
+  .pause .ld{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.42}
+
+  .out{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:11px}
+  .oc{border:1px solid rgba(0,229,168,.3);background:rgba(0,229,168,.05);border-radius:9px;padding:9px 11px}
+  .oc .t{font-size:12.4px;font-weight:700;color:var(--green)}
+  .oc .m{font-family:var(--mono);font-size:9.6px;color:var(--muted);margin-top:3px;line-height:1.36}
+
+  /* not-built strip */
+  footer{display:flex;align-items:center;gap:14px;padding:0 4px 14px}
+  .nb-label{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--red);font-weight:700;flex:none}
+  .nb{display:flex;gap:10px;flex:1}
+  .nb div{border:1px dashed rgba(255,82,99,.45);border-radius:9px;padding:8px 12px;background:rgba(255,82,99,.05);flex:1}
+  .nb .t{font-size:12.4px;font-weight:700;color:#ff8f9b}
+  .nb .m{font-family:var(--mono);font-size:9.6px;color:var(--dim);margin-top:2px}
+  .nb-proof{font-family:var(--mono);font-size:10px;color:var(--muted);flex:none;max-width:330px;line-height:1.45}
+  .nb-proof b{color:var(--green)}
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <header>
+    <svg class="mark" viewBox="0 0 64 64">
+      <defs>
+        <linearGradient id="bp" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#13233C"/><stop offset="1" stop-color="#050914"/></linearGradient>
+        <linearGradient id="br" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4DE8FF"/><stop offset="1" stop-color="#00A8CC"/></linearGradient>
+        <radialGradient id="bm" cx=".38" cy=".34" r=".78"><stop offset="0" stop-color="#FF8A96"/><stop offset="1" stop-color="#E6203A"/></radialGradient>
+      </defs>
+      <rect x="1" y="1" width="62" height="62" rx="15" fill="url(#bp)"/>
+      <rect x="1.75" y="1.75" width="60.5" height="60.5" rx="14.25" fill="none" stroke="#00D9FF" stroke-opacity=".34" stroke-width="1.5"/>
+      <g fill="none" stroke="url(#br)" stroke-width="4.6" stroke-linecap="round">
+        <path d="M14 23.5V17a3 3 0 0 1 3-3h6.5"/><path d="M40.5 14H47a3 3 0 0 1 3 3v6.5"/>
+        <path d="M50 40.5V47a3 3 0 0 1-3 3h-6.5"/><path d="M23.5 50H17a3 3 0 0 1-3-3v-6.5"/>
+      </g>
+      <circle cx="32" cy="32" r="13.5" fill="none" stroke="#00D9FF" stroke-opacity=".3" stroke-width="2"/>
+      <circle cx="32" cy="32" r="8" fill="url(#bm)"/>
+    </svg>
+    <div>
+      <h1>Inspectra<span>AI</span> — System Architecture</h1>
+      <div class="sub">One upload → measured change → evidence → finding → maintenance ticket, with a persisted trace of every decision</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="legend">
+      <span><i></i>request / data</span>
+      <span><i class="vio" style="border-top-color:#8b5cf6"></i>planner loop</span>
+      <span class="dashed"><i></i>not built</span>
+    </div>
+  </header>
+
+  <div class="cols">
+
+    <!-- CLIENT -->
+    <div class="col">
+      <div class="tier">Client · browser</div>
+      <div class="stack">
+        <div class="box accent grow">
+          <div class="bt"><span class="dot"></span>Next.js 15 · React 19</div>
+          <div class="bd">App Router dashboard. TypeScript strict, Tailwind design tokens, Framer Motion.</div>
+          <div class="code">TanStack Query — server state<br>TanStack Table — 15 data grids</div>
+        </div>
+        <div class="box">
+          <div class="bt"><span class="dot v"></span>LanguageProvider</div>
+          <div class="bd">Translates rendered text via the server proxy. English source kept per node so the language can be reverted exactly.</div>
+          <div class="code">localStorage → offline replay</div>
+        </div>
+        <div class="box">
+          <div class="bt"><span class="dot g"></span>Service Worker</div>
+          <div class="bd">App shell precache · stale-if-error on API reads · responses marked <em>served from cache</em> with their age.</div>
+        </div>
+        <div class="box" style="border-color:rgba(255,82,99,.35)">
+          <div class="bt"><span class="dot r"></span>Writes never queued</div>
+          <div class="bd">Offline means reads survive. An upload while disconnected fails loudly rather than pretending to save.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EDGE -->
+    <div class="col">
+      <div class="tier">Edge · same origin</div>
+      <div class="stack">
+        <div class="box">
+          <div class="bt"><span class="dot"></span>Traefik</div>
+          <div class="bd">TLS + routing, managed by Coolify.</div>
+        </div>
+        <div class="box accent">
+          <div class="bt"><span class="dot"></span>Next rewrites proxy</div>
+          <div class="bd">The browser only ever talks to one origin, so <b>CORS is not a deployment requirement</b>, and one build runs anywhere.</div>
+          <div class="code">/backend-api/:path*<br>  → BACKEND_ORIGIN/:path*<br>resolved at request time</div>
+        </div>
+        <div class="box violet">
+          <div class="bt"><span class="dot v"></span>Auth boundary</div>
+          <div class="bd">JWT bearer → user → <b>organization id</b>. Every query is tenant-scoped; a cross-tenant id answers 404, not another tenant's row.</div>
+          <div class="code">get_current_user<br>get_current_organization_id</div>
+        </div>
+        <div class="box">
+          <div class="bt"><span class="dot a"></span>Route guard</div>
+          <div class="bd">Unauthenticated visits render nothing until the session resolves — no protected chrome leaks for a frame.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ENGINE -->
+    <div class="col">
+      <div class="tier">Application server · FastAPI + OpenCV 5.0.0</div>
+      <div class="stack">
+        <div class="box accent">
+          <div class="bt"><span class="dot"></span>One shared run service — <span style="font-family:var(--mono);font-size:11.5px;font-weight:400;color:var(--cyan)">services/inspection_run.py</span></div>
+          <div class="bd">The API endpoint and the demo seeder call the <b>same function</b>, so seeded data can never be structurally better than real data. Every dashboard number describes something the pipeline actually measured.</div>
+        </div>
+
+        <div class="box accent" style="flex:1;min-height:0">
+          <div class="bt"><span class="dot"></span>Vision pipeline — measured at every stage</div>
+          <div class="pipe">
+            <div class="step"><div class="n">01</div><div class="t">Quality gate</div><div class="m">blur = ∇²I variance<br>exposure · glare<br>coverage · suitability</div></div>
+            <div class="step"><div class="n">02</div><div class="t">Registration</div><div class="m">ORB + homography<br>RANSAC · inlier ratio<br>reprojection error</div></div>
+            <div class="step"><div class="n">03</div><div class="t">Change detect</div><div class="m">absdiff → threshold<br>→ morphology → contours<br>cross-checked by SSIM</div></div>
+            <div class="step"><div class="n">04</div><div class="t">Evidence</div><div class="m">6 artifacts / finding<br>annotated · crop · mask<br>comparison · overlay</div></div>
+          </div>
+
+          <div class="loopwrap">
+            <div class="lt"><span class="dot v"></span>Deterministic bounded planner — not a language model</div>
+            <div class="ld">A transition table over states, choosing the next action from the measurement the last stage returned. Three hard limits stop it: iteration count, wall-clock budget, and a repeat guard. <code>planner: "deterministic-rule-v1"</code> is recorded on every run.</div>
+          </div>
+
+          <div class="pause">
+            <div class="lt"><span class="dot a"></span>Human-in-the-loop — the run stops and asks</div>
+            <div class="ld">A failed quality gate or a registration that measures a near-zero inlier ratio pauses the run, <b>serialises its context to JSON</b>, and resumes from that snapshot when a human answers. It does not restart, and it does not guess.</div>
+          </div>
+        </div>
+
+        <div class="out">
+          <div class="oc"><div class="t">Finding</div><div class="m">measured bbox<br>severity · confidence</div></div>
+          <div class="oc"><div class="t">Maintenance ticket</div><div class="m">priority-ranked<br>guarded state transitions</div></div>
+          <div class="oc"><div class="t">Persisted trace</div><div class="m">agent_steps<br>agent_tool_calls</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DATA + EXTERNAL -->
+    <div class="col">
+      <div class="tier">Persistence &amp; external</div>
+      <div class="stack">
+        <div class="box">
+          <div class="bt"><span class="dot"></span>PostgreSQL 18</div>
+          <div class="bd">23 tables, migrated with Alembic on container start. Enum <b>values</b> persisted, not Python names.</div>
+          <div class="code">organizations · equipment · inspections<br>agent_runs · agent_steps · tool_calls<br>findings · evidence · tickets · observations</div>
+        </div>
+        <div class="box">
+          <div class="bt"><span class="dot"></span>Filesystem evidence store</div>
+          <div class="bd">Derived PNGs written at runtime, served back over an <b>authenticated, tenant-scoped</b> route with path containment enforced.</div>
+        </div>
+        <div class="box violet">
+          <div class="bt"><span class="dot v"></span>BHASHINI NMT</div>
+          <div class="bd">12 Indic languages. The credential lives <b>only</b> on the server — a browser-side key would be published, not configured.</div>
+          <div class="code">POST /api/translate (batched)</div>
+        </div>
+        <div class="box">
+          <div class="bt"><span class="dot g"></span>Self-auditing endpoint</div>
+          <div class="bd">Runtime introspection publishes what is real <b>and what is not</b> — including <code style="color:#ff8f9b">language_model_planner: false</code>.</div>
+          <div class="code">GET /api/system/capabilities</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <div class="nb-label">Designed for · not implemented</div>
+    <div class="nb">
+      <div><div class="t">AWS vision worker</div><div class="m">EC2 / SageMaker heavy stage</div></div>
+      <div><div class="t">S3 evidence storage</div><div class="m">no boto3, no bucket</div></div>
+      <div><div class="t">COOL library</div><div class="m">AWS Marketplace · not used</div></div>
+      <div><div class="t">Per-frame defect tracking</div><div class="m">video = sampled frames</div></div>
+    </div>
+    <div class="nb-proof">Runs today on a <b>Raspberry Pi 5</b> with local storage. <b>76</b> backend tests pass. These gaps are stated by the app itself, not hidden.</div>
+  </footer>
+
+</div>
+</body>
+</html>

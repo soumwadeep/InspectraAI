@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inspectra AI — One Pager</title>
+<style>
+  @font-face {
+    font-family: 'Space Grotesk';
+    src: url('file:///Volumes/SoumwadeepSSD/Github Repos/InspectraAI/node_modules/@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2') format('woff2-variations');
+    font-weight: 300 700; font-style: normal;
+  }
+  @font-face {
+    font-family: 'JetBrains Mono';
+    src: url('file:///Volumes/SoumwadeepSSD/Github Repos/InspectraAI/node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+    font-weight: 100 800; font-style: normal;
+  }
+
+  :root {
+    --void: #050914;
+    --panel: #0d1728;
+    --ink: #0c1828;
+    --muted: #5a6b80;
+    --line: #d8e2ee;
+    --primary: #00a8cc;
+    --primary-bright: #00d9ff;
+    --accent: #6d42c7;
+    --success: #00966e;
+    --critical: #d63344;
+    --display: 'Space Grotesk', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 210mm; }
+  body {
+    font-family: var(--display);
+    color: var(--ink);
+    background: #fff;
+    -webkit-font-smoothing: antialiased;
+    font-size: 8.4pt;
+    line-height: 1.42;
+  }
+
+  .page { width: 210mm; height: 296mm; display: flex; flex-direction: column; }
+
+  /* ---------- hero ---------- */
+  .hero {
+    background: radial-gradient(120% 180% at 88% -40%, #123049 0%, var(--void) 58%);
+    color: #eaf4ff;
+    padding: 9mm 10mm 8mm;
+    position: relative; overflow: hidden;
+  }
+  .hero::after {
+    content: ''; position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(0,217,255,.07) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(0,217,255,.07) 1px, transparent 1px);
+    background-size: 5mm 5mm; pointer-events: none;
+  }
+  .hero-row { display: flex; align-items: center; gap: 5mm; position: relative; z-index: 2; }
+  .mark { width: 15mm; height: 15mm; flex: none; }
+  h1 { font-size: 25pt; font-weight: 700; letter-spacing: -.9pt; line-height: 1; }
+  h1 span { color: var(--primary-bright); }
+  .tagline { font-size: 9.6pt; font-weight: 500; color: #9fb6cc; margin-top: 1.6mm; letter-spacing: .1pt; }
+  .pills { display: flex; gap: 2mm; margin-top: 5mm; position: relative; z-index: 2; flex-wrap: wrap; }
+  .pill {
+    font-family: var(--mono); font-size: 6.6pt; letter-spacing: .3pt;
+    border: 1px solid rgba(0,217,255,.35); color: #b7e9f7;
+    padding: 1.3mm 2.4mm; border-radius: 999px; background: rgba(0,217,255,.06);
+  }
+  .pill b { color: #fff; font-weight: 700; }
+
+  /* ---------- body ---------- */
+  .body { padding: 7mm 10mm 6mm; flex: 1; display: flex; flex-direction: column; gap: 5.5mm; }
+
+  h2 {
+    font-size: 7.4pt; font-weight: 700; letter-spacing: 1.1pt; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 2.2mm; display: flex; align-items: center; gap: 2mm;
+  }
+  h2::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  p.lead { font-size: 9pt; line-height: 1.5; }
+  p.lead b { font-weight: 700; }
+
+  /* pipeline strip */
+  .flow { display: flex; align-items: stretch; gap: 0; }
+  .stage {
+    flex: 1; border: 1px solid var(--line); border-radius: 2mm; padding: 2.6mm 3mm;
+    background: linear-gradient(180deg,#fbfdff,#f3f7fb);
+  }
+  .stage + .stage { margin-left: 3.2mm; position: relative; }
+  .stage + .stage::before {
+    content: ''; position: absolute; left: -3.3mm; top: 50%; width: 3.2mm; height: 1px;
+    background: var(--primary);
+  }
+  .stage .n { font-family: var(--mono); font-size: 6pt; color: var(--primary); font-weight: 700; }
+  .stage .t { font-size: 8.2pt; font-weight: 700; margin-top: .4mm; }
+  .stage .d { font-size: 6.9pt; color: var(--muted); margin-top: .8mm; line-height: 1.32; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-family: var(--mono); font-size: 6.2pt; letter-spacing: .5pt; text-transform: uppercase;
+    color: var(--muted); text-align: left; padding: 0 2mm 1.4mm; border-bottom: 1px solid var(--line);
+    font-weight: 700;
+  }
+  td { padding: 1.5mm 2mm; border-bottom: 1px solid #eef3f8; font-size: 7.9pt; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.mono, th.mono { font-family: var(--mono); }
+  .cause { color: var(--ink); }
+  .effect { font-weight: 700; color: var(--primary); }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* two column */
+  .cols { display: flex; gap: 5mm; }
+  .col { flex: 1; min-width: 0; }
+  .card { border: 1px solid var(--line); border-radius: 2mm; padding: 3mm 3.4mm; }
+  .card h3 { font-size: 8.4pt; font-weight: 700; margin-bottom: 1.8mm; }
+  .card h3 .tag { font-family: var(--mono); font-size: 6pt; color: var(--success); font-weight: 700; }
+
+  ul.notes { list-style: none; display: flex; flex-direction: column; gap: 1.5mm; }
+  ul.notes li { font-size: 7.5pt; line-height: 1.38; padding-left: 3.4mm; position: relative; color: #26374a; }
+  ul.notes li::before {
+    content: ''; position: absolute; left: 0; top: 1.5mm; width: 1.6mm; height: 1.6mm;
+    border-radius: 50%; background: var(--critical);
+  }
+  ul.notes.ok li::before { background: var(--success); }
+  ul.notes li b { font-weight: 700; color: var(--ink); }
+
+  .formula {
+    font-family: var(--mono); font-size: 7.2pt; background: #f3f7fb; border-left: 2px solid var(--primary);
+    padding: 1.8mm 2.4mm; border-radius: 0 1.5mm 1.5mm 0; margin-top: 1.8mm; color: #1c2c3e;
+  }
+
+  /* footer */
+  .foot {
+    border-top: 2px solid var(--void); background: #f6f9fc;
+    padding: 4mm 10mm; display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm;
+  }
+  .foot .stack { font-size: 7pt; color: var(--muted); max-width: 108mm; line-height: 1.45; }
+  .foot .stack b { color: var(--ink); font-weight: 700; }
+  .foot .links { text-align: right; font-family: var(--mono); font-size: 7pt; line-height: 1.7; }
+  .foot .links a { color: var(--primary); text-decoration: none; font-weight: 700; }
+  .foot .links .lbl { color: var(--muted); letter-spacing: .4pt; text-transform: uppercase; font-size: 5.8pt; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="hero">
+    <div class="hero-row">
+      <svg class="mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="p" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#13233C"/><stop offset="1" stop-color="#050914"/>
+          </linearGradient>
+          <linearGradient id="r" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#4DE8FF"/><stop offset="1" stop-color="#00A8CC"/>
+          </linearGradient>
+          <radialGradient id="m" cx=".38" cy=".34" r=".78">
+            <stop offset="0" stop-color="#FF8A96"/><stop offset="1" stop-color="#E6203A"/>
+          </radialGradient>
+        </defs>
+        <rect x="1" y="1" width="62" height="62" rx="15" fill="url(#p)"/>
+        <rect x="1.75" y="1.75" width="60.5" height="60.5" rx="14.25" fill="none" stroke="#00D9FF" stroke-opacity=".34" stroke-width="1.5"/>
+        <g fill="none" stroke="url(#r)" stroke-width="4.6" stroke-linecap="round">
+          <path d="M14 23.5V17a3 3 0 0 1 3-3h6.5"/><path d="M40.5 14H47a3 3 0 0 1 3 3v6.5"/>
+          <path d="M50 40.5V47a3 3 0 0 1-3 3h-6.5"/><path d="M23.5 50H17a3 3 0 0 1-3-3v-6.5"/>
+        </g>
+        <circle cx="32" cy="32" r="13.5" fill="none" stroke="#00D9FF" stroke-opacity=".3" stroke-width="2"/>
+        <circle cx="32" cy="32" r="8" fill="url(#m)"/>
+        <circle cx="28.9" cy="28.9" r="2.1" fill="#fff" fill-opacity=".72"/>
+      </svg>
+      <div>
+        <h1>Inspectra<span>AI</span></h1>
+        <div class="tagline">See the problem. Investigate the cause. Act before failure.</div>
+      </div>
+    </div>
+    <div class="pills">
+      <div class="pill"><b>OpenCV 5.0.0</b> real pipeline</div>
+      <div class="pill">deterministic planner · <b>no language model</b></div>
+      <div class="pill"><b>76</b> backend tests passing</div>
+      <div class="pill">human-in-the-loop <b>pause &amp; resume</b></div>
+      <div class="pill">every number <b>measured</b></div>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <div>
+      <h2>The problem</h2>
+      <p class="lead">
+        Industrial inspection is still a clipboard. The failure mode isn't carelessness — it's that
+        nobody can answer <b>"has this actually changed since March?"</b> without standing in the same
+        spot, in the same light, with the same memory. The hard part was never detecting rust; it is
+        <b>change over time under uncontrolled capture conditions</b>. And when a system can't tell, it
+        should stop and ask a human rather than guess — which is why ours does.
+      </p>
+    </div>
+
+    <div>
+      <h2>How one upload becomes a work order</h2>
+      <div class="flow">
+        <div class="stage">
+          <div class="n">01</div>
+          <div class="t">Quality gate</div>
+          <div class="d">Blur as variance of the Laplacian, plus exposure, glare, coverage. Below threshold → <b>pause</b>.</div>
+        </div>
+        <div class="stage">
+          <div class="n">02</div>
+          <div class="t">Registration</div>
+          <div class="d">ORB + <code>findHomography(RANSAC)</code>, scored on measured inlier ratio and reprojection error, warped with a validity mask.</div>
+        </div>
+        <div class="stage">
+          <div class="n">03</div>
+          <div class="t">Change detection</div>
+          <div class="d">absdiff → threshold → morphology → contours, cross-checked against SSIM. Regions get relative bboxes.</div>
+        </div>
+        <div class="stage">
+          <div class="n">04</div>
+          <div class="t">Evidence → ticket</div>
+          <div class="d">Six artifacts per finding, a finding with measured severity, and a priority-ranked maintenance ticket.</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h2>Agentic — measured results drive actions</h2>
+      <table>
+        <tr><th style="width:47%">What the vision layer measured</th><th>What the system then did</th></tr>
+        <tr>
+          <td class="cause">blur <span class="num">0.4</span>, underexposed, coverage <span class="num">99.7%</span></td>
+          <td class="effect">Run paused and asked the human. Resumed from its persisted context snapshot — not restarted.</td>
+        </tr>
+        <tr>
+          <td class="cause">inlier ratio fell to <span class="num">6.5%</span> after 3 registration attempts</td>
+          <td class="effect">Paused a second time with a different, specific question quoting the measured reason.</td>
+        </tr>
+        <tr>
+          <td class="cause"><span class="num">1</span> region, SSIM <span class="num">0.971</span>, mean diff <span class="num">2.4</span></td>
+          <td class="effect">Finding written with the measured bbox and severity derived from it.</td>
+        </tr>
+        <tr>
+          <td class="cause">severity ≥ warning on safety-relevant equipment</td>
+          <td class="effect">Maintenance ticket raised at <b>high</b> priority, awaiting approval.</td>
+        </tr>
+        <tr>
+          <td class="cause">blur <span class="num">1529.0</span> · <span class="num">1612</span> keypoints · <span class="num">99.9%</span> inliers · <span class="num">2.41%</span> changed</td>
+          <td class="effect">A 14-step trace persisted, each row with its own measured values and <code>duration_ms</code>.</td>
+        </tr>
+      </table>
+      <p style="font-size:7.2pt;color:var(--muted);margin-top:1.6mm">
+        The planner is <b>a deterministic bounded state machine</b> — a transition table over states with three
+        hard limits (iterations, wall-clock, repeat guard). <code>planner: "deterministic-rule-v1"</code> is recorded on
+        every run. No language model is involved, and the app publishes that itself.
+      </p>
+    </div>
+
+    <div class="cols">
+      <div class="col">
+        <h2>Benchmarks we can defend</h2>
+        <div class="card">
+          <h3>Labelled synthetic corpus <span class="tag">32 pairs · seed 7</span></h3>
+          <table>
+            <tr><th>IoU τ</th><th class="mono">Prec</th><th class="mono">Rec</th><th class="mono">F1</th><th class="mono">mIoU</th></tr>
+            <tr><td class="mono"><b>0.30</b></td><td class="num">0.8857</td><td class="num">0.6889</td><td class="num">0.775</td><td class="num">0.572</td></tr>
+            <tr><td class="mono">0.50</td><td class="num">0.4857</td><td class="num">0.3778</td><td class="num">0.425</td><td class="num">0.732</td></tr>
+          </table>
+          <div class="formula">IoU(B<sub>p</sub>, B<sub>g</sub>) = |B<sub>p</sub> ∩ B<sub>g</sub>| / |B<sub>p</sub> ∪ B<sub>g</sub>| ≥ τ</div>
+          <p style="font-size:7pt;color:var(--muted);margin-top:1.8mm;line-height:1.4">
+            The same run "contradicting" its own headline was this: a looser τ accepts sloppier boxes, so recall
+            rises while precision and mean IoU of survivors fall. <b style="color:var(--ink)">The UI labels the
+            threshold and seed on screen</b> — a metric without them is unattributable.
+          </p>
+        </div>
+      </div>
+      <div class="col">
+        <h2>What we fixed, and what we refuse to claim</h2>
+        <div class="card">
+          <ul class="notes ok">
+            <li>Our test fixture used <code>warpAffine(BORDER_REPLICATE)</code>, which <b>manufactured an edge band</b> the detector reported as whole-frame defects at <b>0.96 confidence on clean captures</b>. Found only by running 18 captures back to back — no unit test reached it.</li>
+            <li>Alignment never wrote its validity mask, so the warp border scored as change. Fixed: <b>36 clean pairs now produce 0 false regions.</b></li>
+            <li>Correcting both <b>lowered</b> the headline score (0.90/1.00 → 0.886/0.689). That was the honest direction.</li>
+          </ul>
+          <ul class="notes" style="margin-top:2.4mm">
+            <li><b>No AWS, S3 or COOL integration.</b> Runs on a Raspberry Pi 5. <code>GET /api/system/capabilities</code> publishes this — we shipped the endpoint that can refute us.</li>
+            <li>Benchmark metrics describe a <b>synthetic</b> corpus, not real plant imagery.</li>
+            <li>Video is frame sampling with measured sharpest-frame selection — <b>no per-frame defect tracking</b>, no live camera.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <div class="stack">
+      <b>Stack ·</b> Next.js 15 · React 19 · TypeScript · Tailwind · Framer Motion · TanStack Query · FastAPI · SQLAlchemy 2 · Alembic · Pydantic v2 · OpenCV 5.0.0 · NumPy · Pillow · PostgreSQL 18 · Docker · Coolify · Traefik · Raspberry Pi 5 · BHASHINI NMT (12 languages, offline-cached)
+    </div>
+    <div class="links">
+      <div><span class="lbl">Live demo</span><br><a href="https://inspectraai.soumwadeepguha.com">inspectraai.soumwadeepguha.com</a></div>
+      <div style="margin-top:1.6mm"><span class="lbl">Source</span><br><a href="https://github.com/soumwadeep/InspectraAI">github.com/soumwadeep/InspectraAI</a></div>
+      <div style="margin-top:1.6mm"><span class="lbl">Verify our claims</span><br><a href="https://inspectraaiapi.soumwadeepguha.com/api/system/capabilities">/api/system/capabilities</a></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
