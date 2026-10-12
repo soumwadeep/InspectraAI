@@ -540,6 +540,40 @@ export async function fetchBlobUrl(path: string): Promise<string> {
 
 // ---------- Auth API ----------
 
+export interface FrameSample {
+  id: string;
+  frame_index: number;
+  timestamp_ms: number | null;
+  storage_path: string;
+  blur_score: number | null;
+  mean_abs_diff: number | null;
+  ssim_score: number | null;
+}
+export interface InspectionFrames {
+  frames: FrameSample[];
+  selected_frame_index: number | null;
+  selection_reason: string | null;
+  count: number;
+}
+export interface SystemCapabilities {
+  opencv: {
+    version: string;
+    ffmpeg: boolean;
+    gstreamer: boolean;
+    contrib_available: boolean;
+    note: string;
+  };
+  database: { dialect: string; tables_present: number; postgres_verified: boolean };
+  integrations: {
+    redis_configured: boolean;
+    s3_configured: boolean;
+    aws_worker: boolean;
+    cool_integration: boolean;
+  };
+  queue: { instrumented: boolean; note: string };
+  features: { name: string; implemented: boolean; detail: string }[];
+}
+
 export const api = {
   auth: {
     login: async (email: string, password: string): Promise<{ access_token: string; user: User }> => {
@@ -661,7 +695,7 @@ export const api = {
     },
   },
 
-  // ---------- Inspections API ----------
+// ---------- Inspections API ----------
   inspections: {
     list: async (status?: string): Promise<Inspection[]> => {
       const query = status ? `?status=${encodeURIComponent(status)}` : "";
@@ -691,6 +725,19 @@ export const api = {
         body: form,
       });
     },
+    /**
+     * Frames sampled from a video input, each with the statistics measured while
+     * decoding it, plus which frame the agent chose to analyse.
+     */
+    frames: async (id: string): Promise<InspectionFrames> => {
+      return request<InspectionFrames>(`/api/inspections/${id}/frames`);
+    },
+    frameImageUrl: (inspectionId: string, frameId: string): string => {
+      const token = getToken();
+      // The frame route is auth-protected, so a bare <img src> would 401. Callers
+      // that need the token in the URL get it here; prefer fetchBlobUrl otherwise.
+      return `${API_BASE}/api/inspections/${inspectionId}/frames/${frameId}/image${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    },
   },
 
   // ---------- Tickets API ----------
@@ -716,6 +763,14 @@ export const api = {
     },
   },
 
+  // ---------- System API ----------
+  system: {
+    /** What this deployment can actually do, introspected from the running API. */
+    capabilities: async (): Promise<SystemCapabilities> => {
+      return request<SystemCapabilities>(`/api/system/capabilities`);
+    },
+  },
+
   // ---------- Analytics API ----------
   analytics: {
     overview: async (days = 30): Promise<AnalyticsOverview> => {
@@ -732,6 +787,19 @@ export const api = {
     getRun: async (id: string): Promise<AgentRun> => {
       const res = await request<BackendAgentRunDetail>(`/api/agent/runs/${id}`);
       return adaptAgentRunDetail(res);
+    },
+    /**
+     * Continue a paused run. `retry` re-runs the quality gate on the newest
+     * capture, `proceed` accepts the current one, `abort` fails the run.
+     */
+    resumeRun: async (
+      id: string,
+      response: "retry" | "proceed" | "abort",
+    ): Promise<Record<string, unknown>> => {
+      return request<Record<string, unknown>>(`/api/agent/runs/${id}/resume`, {
+        method: "POST",
+        body: JSON.stringify({ response }),
+      });
     },
   },
 
