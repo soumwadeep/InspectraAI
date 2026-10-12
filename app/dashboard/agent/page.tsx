@@ -26,7 +26,6 @@ import {
   outcomeString,
   parseInspectionPayload,
   readFinalOutcome,
-  stepAction,
   type ResumeChoice,
 } from "@/components/agent/agent-data";
 import { EvidenceGallery } from "@/components/agent/evidence-gallery";
@@ -154,10 +153,11 @@ function AgentConsole() {
   const detailQuery = useAgentRun(selectedId ?? "");
 
   /**
-   * The run-level record is preferred: it is refetched on demand and is the only
-   * response that carries `final_outcome`. The list row already holds the same steps
-   * inline, so it fills the pane while the detail request is in flight. Equipment name
-   * only exists on the list response, so it is merged back in.
+   * The run-level record is preferred: it is refetched on demand after a resume,
+   * and its steps are ordered by the detail route. The list row carries the same
+   * steps and the same `final_outcome`, so it fills the pane while the detail
+   * request is in flight. Equipment name only exists on the list response, so it
+   * is merged back in.
    */
   const run: AgentRun | null = useMemo(() => {
     if (detailQuery.data) {
@@ -178,9 +178,9 @@ function AgentConsole() {
 
   /**
    * The question a paused run asked. `final_outcome.awaiting` is the authoritative
-   * field, but it does not reach the browser today (see agent-data.ts), so the
-   * `request_human_input` step's own description is used — same sentence, persisted
-   * separately, and the panel names which source it read.
+   * field; the `request_human_input` step's own description is the same sentence
+   * persisted separately, used as the fallback when a row predates the outcome field.
+   * The panel names which source it read.
    */
   const pauseReason = useMemo(() => {
     if (!run) return null;
@@ -188,14 +188,14 @@ function AgentConsole() {
     if (awaiting) return { text: awaiting, source: "final_outcome.awaiting" };
     for (let index = run.steps.length - 1; index >= 0; index -= 1) {
       const step = run.steps[index];
-      if (isHumanStep(step) && stepAction(step) === "request_human_input" && step.description) {
+      if (isHumanStep(step) && step.action === "request_human_input" && step.description) {
         return { text: step.description, source: `step ${step.step} (request_human_input)` };
       }
     }
     for (let index = run.steps.length - 1; index >= 0; index -= 1) {
       const step = run.steps[index];
       if (isHumanStep(step) && step.description) {
-        return { text: step.description, source: `step ${step.step} (${stepAction(step)})` };
+        return { text: step.description, source: `step ${step.step} (${step.action})` };
       }
     }
     return null;

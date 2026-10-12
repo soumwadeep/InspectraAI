@@ -408,10 +408,24 @@ class VisionAgent:
         if ctx.quality_metrics.get("inspection_suitability") == "insufficient":
             reasons = "; ".join(ctx.quality_metrics.get("reasons", [])) or "quality below threshold"
             return f"Image quality is insufficient for inspection ({reasons}). Retake with better focus, lighting or framing."
-        if ctx.alignment_result and ctx.alignment_result.get("status") not in ("success", "poor_quality"):
+        # `poor_quality` must not be excluded here. It is the status a human gets
+        # when they override the quality gate and registration then measures a
+        # near-zero inlier ratio — excluding it left that question as the contentless
+        # "Human input required." while the numbers sat unused in the same row.
+        if ctx.alignment_result and ctx.alignment_result.get("status") != "success":
+            ratio = ctx.alignment_result.get("inlier_ratio")
+            reason = ctx.alignment_result.get("reason") or ""
+            # The tool's own reason already quotes the ratio when it has one, so
+            # appending it again would print the same number twice.
+            measured = (
+                f", inlier ratio {ratio * 100:.1f}%"
+                if isinstance(ratio, (int, float)) and "inlier ratio" not in reason.lower()
+                else ""
+            )
             return (
                 f"The capture could not be registered to the reference "
-                f"({ctx.alignment_result.get('reason') or 'insufficient feature overlap'}). "
+                f"({reason or 'insufficient feature overlap'}"
+                f"{measured}). "
                 f"Retake from closer to the reference viewpoint, or proceed without comparison."
             )
         if float(ctx.change_detection.get("change_fraction") or 0) > 0.35:

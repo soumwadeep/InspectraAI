@@ -165,7 +165,11 @@ export interface AgentStep {
   id: string;
   step: number;
   tool: string;
-  action: "started" | "completed" | "failed";
+  /**
+   * The backend's `action_type` column stores the action that ran — a tool name,
+   * `state_transition`, `human_response` — so it is an open vocabulary, not a fixed set.
+   */
+  action: string;
   description: string;
   arguments?: Record<string, unknown>;
   resultSummary?: string;
@@ -206,9 +210,9 @@ export interface AgentRun {
   /**
    * What the planner recorded when the run stopped: planner id, final state,
    * end_reached, alignment attempts, findings created, timeout, awaiting query,
-   * recommendations and any video sampling summary. Absent until the detail
-   * adapter forwards it, in which case the UI says "not returned" rather than
-   * guessing.
+   * recommendations and any video sampling summary. Forwarded verbatim from
+   * `agent_runs.final_outcome`; the UI says "not returned" when it is absent
+   * rather than reconstructing it from the step trace.
    */
   finalOutcome?: Record<string, unknown> | null;
 }

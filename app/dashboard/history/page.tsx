@@ -147,7 +147,7 @@ function buildColumns(equipmentMap: Map<string, Equipment>): ColumnDef<Inspectio
             </Button>
             {inspection.agentRunId && (
               <Button variant="ghost" size="icon-sm" asChild>
-                <Link href={`/dashboard/agent/${inspection.agentRunId}`}>
+                <Link href={`/dashboard/agent?run=${inspection.agentRunId}`}>
                   <Bot className="h-3.5 w-3.5" />
                 </Link>
               </Button>

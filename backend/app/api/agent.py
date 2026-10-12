@@ -91,6 +91,9 @@ async def list_agent_runs(
             "iterations": run.iterations,
             "budget_used": run.budget_used,
             "final_action": run.final_action,
+            # The console's outcome panel reads this, so a list row alone can fill
+            # the pane before the detail request lands.
+            "final_outcome": run.final_outcome,
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "ended_at": run.ended_at.isoformat() if run.ended_at else None,
             # `__dict__` carries SQLAlchemy's `_sa_instance_state`, which pydantic

@@ -39,6 +39,7 @@ export function FinalOutcomePanel({ run }: FinalOutcomePanelProps) {
   const alignmentAttempts = outcomeNumber(outcome, "alignment_attempts");
   const findingsCreated = outcomeNumber(outcome, "findings_created");
   const timedOut = outcomeBoolean(outcome, "timed_out");
+  const overallConfidence = outcomeNumber(outcome, "overall_confidence");
   const error = outcomeString(outcome, "error");
   const awaiting = outcomeString(outcome, "awaiting");
   const recommendations = outcomeStringList(outcome, "recommendations");
@@ -70,18 +71,14 @@ export function FinalOutcomePanel({ run }: FinalOutcomePanelProps) {
         {!outcome && (
           <div className="rounded-lg border border-warning/30 bg-warning/5 p-3">
             <p className="text-xs font-semibold text-warning">
-              Not exposed to this page by the API client
+              No recorded outcome on this response
             </p>
             <p className="mt-1 text-xs leading-relaxed text-secondary-text">
-              <code className="telemetry">GET /api/agent/runs/{"{id}"}</code> does
-              return <code className="telemetry">run.final_outcome</code>, and
-              lib/api.ts declares it, but{" "}
-              <code className="telemetry">adaptAgentRunDetail</code> does not copy it
-              onto <code className="telemetry">AgentRun</code>, so the browser never
-              receives it. Until that adapter carries the field, every value below
-              reads as not returned rather than being filled in from the trace — the
-              alternative would be inventing numbers for a run this console is
-              supposed to report verbatim. The run-level fields that{" "}
+              <code className="telemetry">agent_runs.final_outcome</code> is written
+              when the loop stops — on completion, failure and on a pause for human
+              input. A run whose row is empty predates that column being populated, so
+              every value below reads as not returned rather than being reconstructed
+              from the step trace. The run-level fields that{" "}
               <em>are</em> returned still show.
             </p>
           </div>
@@ -110,6 +107,10 @@ export function FinalOutcomePanel({ run }: FinalOutcomePanelProps) {
             value={timedOut === null ? null : String(timedOut)}
             tone={timedOut === true ? "critical" : "muted"}
             mono
+          />
+          <OutcomeField
+            label="overall_confidence (1 − changed frame area)"
+            value={formatNumber(overallConfidence)}
           />
           <OutcomeField
             label="budget_used (run row)"

@@ -18,7 +18,6 @@ import {
   formatServerStamp,
   isStateTransition,
   runStatusVariant,
-  stepAction,
 } from "@/components/agent/agent-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -150,7 +149,7 @@ export function RunList({
 }
 
 function stepActionsKey(run: AgentRun): string {
-  return run.steps.map((step) => stepAction(step)).join(" ");
+  return run.steps.map((step) => step.action).join(" ");
 }
 
 function RunListItem({

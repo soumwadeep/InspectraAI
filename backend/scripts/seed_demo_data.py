@@ -28,7 +28,7 @@ from app.agent.state_machine import AgentState
 from app.core.security import hash_password
 from app.core.storage import UPLOAD_DIR
 from app.database import SessionLocal, enable_sqlite_foreign_keys
-from app.models.agent import AgentRun, AgentStep
+from app.models.agent import AgentRun, AgentStep, AgentToolCall
 from app.models.equipment import Equipment, EquipmentReferenceImage
 from app.models.finding import Finding, FindingEvidence
 from app.models.inspection import (
@@ -158,6 +158,11 @@ def _shift_times(db: Session, inspection: Inspection, delta: timedelta) -> None:
         for step in db.query(AgentStep).filter(AgentStep.run_id == run_id):
             if step.timestamp is not None:
                 step.timestamp -= delta
+        for call in db.query(AgentToolCall).filter(AgentToolCall.run_id == run_id):
+            if call.started_at is not None:
+                call.started_at -= delta
+            if call.completed_at is not None:
+                call.completed_at -= delta
         for obs in db.query(VisionObservation).filter(
             VisionObservation.agent_run_id == run_id
         ):

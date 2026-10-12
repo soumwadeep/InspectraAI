@@ -5,8 +5,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+FAIL=0
+
 LOG_DIR="$(mktemp -d)"
-trap 'rm -rf "$LOG_DIR"' EXIT
 
 note() { printf '%-28s %s\n' "$1" "$2"; }
 run() {
@@ -33,6 +34,20 @@ run "backend imports"      bash -c 'cd backend && python3 -c "import app.main"'
 run "pytest suite"         bash -c 'cd backend && python3 -m pytest tests/ -q'
 run "frontend typecheck"   npx tsc --noEmit
 run "frontend lint"        npm run lint
+
+# Build from the committed tree, not the working directory. `tsc` and `next build`
+# both read files from disk, so an import whose target was never `git add`ed passes
+# here, passes locally, and then fails on any host that clones the commit — which is
+# exactly what happened to the Coolify frontend deploy.
+CLEAN="$(mktemp -d)"
+trap 'rm -rf "$CLEAN" "$LOG_DIR"' EXIT
+if git archive HEAD | tar -x -C "$CLEAN" 2>/dev/null; then
+  ln -s "$(pwd)/node_modules" "$CLEAN/node_modules"
+  run "clean-tree build (tracked files only)" \
+    bash -c "cd '$CLEAN' && npx next build"
+else
+  note "clean-tree build (tracked files only)" "SKIPPED (git archive failed)"
+fi
 
 # Schema drift: the migration head must equal the revision the database reports.
 run "alembic head == db"   bash -c '

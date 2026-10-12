@@ -44,25 +44,15 @@ export const runStatusDot: Record<
   paused: "warning",
 };
 
-/**
- * `AgentStep["action"]` is declared as a started/completed/failed union, but the
- * backend's `action_type` column stores the action that ran (`align_with_reference`,
- * `state_transition`, …). Widening to `string` here keeps every comparison honest
- * without pretending the declared union matches the wire.
- */
-export function stepAction(step: AgentStep): string {
-  return String(step.action);
-}
-
 export function isStateTransition(step: AgentStep): boolean {
-  return stepAction(step) === STATE_TRANSITION_ACTION;
+  return step.action === STATE_TRANSITION_ACTION;
 }
 
 export function isHumanStep(step: AgentStep): boolean {
   return (
     step.isHumanInteraction === true ||
-    stepAction(step) === HUMAN_RESPONSE_ACTION ||
-    stepAction(step) === "request_human_input"
+    step.action === HUMAN_RESPONSE_ACTION ||
+    step.action === "request_human_input"
   );
 }
 
@@ -153,21 +143,15 @@ export function summarizeTrace(steps: AgentStep[], toolCalls: AgentToolCall[]): 
 // ------------------------------------------------------------------ final outcome
 
 /**
- * `GET /api/agent/runs/{id}` returns `run.final_outcome` and lib/api.ts declares
- * it on `BackendAgentRunDetail`, but `adaptAgentRunDetail` does not copy it onto
- * `AgentRun`, so today the console receives nothing and says so. Probing both the
- * camelCase and snake_case spellings means the panel fills itself the moment that
- * adapter carries the field — with no fabricated fallback in the meantime.
+ * `adaptAgentRunDetail` forwards `run.final_outcome` onto `AgentRun.finalOutcome`.
+ * When a response omits it the panel renders "not returned" rather than substituting
+ * values read from the step trace, because a recorded outcome that was never
+ * persisted is not the same thing as one that can be reconstructed.
  */
 export function readFinalOutcome(
   run: AgentRun | null | undefined,
 ): Record<string, unknown> | null {
-  if (!run) return null;
-  const candidate = run as unknown as {
-    finalOutcome?: unknown;
-    final_outcome?: unknown;
-  };
-  const outcome = candidate.finalOutcome ?? candidate.final_outcome;
+  const outcome = run?.finalOutcome;
   if (!outcome || typeof outcome !== "object" || Array.isArray(outcome)) return null;
   return outcome as Record<string, unknown>;
 }

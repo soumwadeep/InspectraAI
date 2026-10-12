@@ -17,7 +17,6 @@ import {
   isStateTransition,
   parseMeasurements,
   stateEdge,
-  stepAction,
   stepTool,
 } from "@/components/agent/agent-data";
 import { Badge } from "@/components/ui/badge";
@@ -71,7 +70,7 @@ export function StepTrace({ steps }: StepTraceProps) {
 }
 
 function ActionRow({ step }: { step: AgentStep }) {
-  const action = stepAction(step);
+  const action = step.action;
   const tool = stepTool(step);
   const human = isHumanStep(step);
   const measurements = parseMeasurements(step.description);
