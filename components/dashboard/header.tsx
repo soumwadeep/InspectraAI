@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { useAnalyticsOverview } from "@/lib/hooks";
 import { useAuth } from "@/lib/auth-context";
+import { LanguageSwitcher } from "@/components/dashboard/language-switcher";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",
@@ -66,6 +67,7 @@ export const Header = ({ onOpenNav }: { onOpenNav: () => void }) => {
       </div>
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <LanguageSwitcher />
         <Link
           href="/dashboard/findings"
           className="relative rounded-lg p-2 text-secondary-text transition-colors hover:bg-surface-elevated hover:text-primary"

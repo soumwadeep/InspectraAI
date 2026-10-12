@@ -9,7 +9,10 @@ import {
   ApprovalRecord,
   BenchmarkRun,
   ServerReport,
+  TranslateLanguages,
 } from "./types";
+
+import { freshnessFromResponse, recordApiResponse } from "./freshness";
 
 // Same-origin by default: requests go to `/backend-api/*` and the Next.js server
 // proxies them to the API (see `next.config.mjs`). `NEXT_PUBLIC_*` is inlined into
@@ -42,6 +45,70 @@ export function clearToken(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(TOKEN_KEY);
 }
+
+/**
+ * Decode a JWT's `exp` without verifying the signature.
+ *
+ * This is only ever used to decide whether it is worth showing locally cached
+ * data, which is a user-experience question, not a security one. Every request
+ * that actually reads or writes server state still carries the token and is
+ * authorised by the API; nothing here grants access to anything.
+ */
+function tokenExpiryEpochSeconds(token: string): number | null {
+  const segment = token.split(".")[1];
+  if (!segment) return null;
+  try {
+    const payload = JSON.parse(atob(segment.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" ? payload.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+export function tokenLooksLive(): boolean {
+  const token = getToken();
+  if (!token) return false;
+  const exp = tokenExpiryEpochSeconds(token);
+  // No parseable expiry: assume not usable rather than caching forever.
+  return exp !== null && exp * 1000 > Date.now();
+}
+
+/**
+ * The last `/api/auth/me` payload the server actually confirmed.
+ *
+ * Restored only when the token is still unexpired and the server could not be
+ * reached at all. Without this the route guard bounces an offline user to the
+ * login page, which makes every cached read unreachable and the offline work
+ * pointless.
+ */
+const CACHED_USER_KEY = "inspectra_cached_user";
+
+function readCachedUser(): User | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CACHED_USER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { user?: User; savedAt?: number };
+    if (!parsed?.user) return null;
+    return parsed.user;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedUser(user: User): void {
+  try {
+    window.localStorage.setItem(CACHED_USER_KEY, JSON.stringify({ user, savedAt: Date.now() }));
+  } catch {
+    /* storage blocked; offline restore simply won't be available */
+  }
+}
+
+export function clearCachedUser(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(CACHED_USER_KEY);
+}
+
 
 // ---------- Typed API responses (snake_case from backend) ----------
 
@@ -492,6 +559,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers,
   });
 
+  // The service worker tags cached answers; recording that here is what lets the
+  // UI distinguish "live from the database" from "what we last saw".
+  recordApiResponse(endpoint, freshnessFromResponse(res));
+
   if (!res.ok) {
     let detail = "An error occurred";
     try {
@@ -601,14 +672,30 @@ export const api = {
       if (!token) return null;
       try {
         const res = await request<BackendUser>("/api/auth/me");
-        return adaptUser(res);
-      } catch {
-        clearToken();
-        return null;
+        const user = adaptUser(res);
+        writeCachedUser(user);
+        return user;
+      } catch (error) {
+        // A rejected credential means the session is over. A request that never
+        // reached the server does not — clearing the token there logged users
+        // out of a working session on any network blip or backend restart, and
+        // made offline unreadable.
+        const rejected = error instanceof ApiError && (error.status === 401 || error.status === 403);
+        if (rejected) {
+          clearToken();
+          clearCachedUser();
+          return null;
+        }
+        if (typeof navigator !== "undefined" && navigator.onLine) {
+          // Reachable server, unexpected failure: do not invent a session.
+          return null;
+        }
+        return tokenLooksLive() ? readCachedUser() : null;
       }
     },
     logout: () => {
       clearToken();
+      clearCachedUser();
     },
   },
 
@@ -776,6 +863,27 @@ export const api = {
     /** What this deployment can actually do, introspected from the running API. */
     capabilities: async (): Promise<SystemCapabilities> => {
       return request<SystemCapabilities>(`/api/system/capabilities`);
+    },
+  },
+
+  // ---------- Translation API ----------
+  translate: {
+    /**
+     * Batch-translate UI strings from English. The BHASHINI credential stays on
+     * the server; this sends text and receives text and nothing else.
+     */
+    languages: async (): Promise<TranslateLanguages> => {
+      return request<TranslateLanguages>(`/api/translate/languages`);
+    },
+    strings: async (
+      texts: string[],
+      target: string,
+    ): Promise<{ translated: Record<string, string>; from_cache: number }> => {
+      const res = await request<{ translated: Record<string, string>; from_cache: number }>(
+        "/api/translate",
+        { method: "POST", body: JSON.stringify({ texts, target }) },
+      );
+      return res;
     },
   },
 

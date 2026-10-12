@@ -281,3 +281,11 @@ export interface ServerReport {
   };
 }
 
+
+/** GET /api/translate/languages — what this deployment can actually serve. */
+export interface TranslateLanguages {
+  source_language: string;
+  configured: boolean;
+  model: string;
+  targets: string[];
+}

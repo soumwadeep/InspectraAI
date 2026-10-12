@@ -18,6 +18,7 @@ import { usePathname } from "next/navigation";
 import { Header } from "@/components/dashboard/header";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { RouteTransition } from "@/components/motion/route-transition";
+import { OfflineBanner } from "@/components/system/offline-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRequireAuth } from "@/lib/auth-context";
 
@@ -54,7 +55,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <div className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onOpenNav={() => setMobileNavOpen(true)} />
         <main className="flex-1 overflow-y-auto scrollbar-thin">
-          <div className="mx-auto w-full max-w-7xl p-4 sm:p-6">
+          <div className="mx-auto w-full max-w-7xl space-y-4 p-4 sm:p-6">
+            <OfflineBanner />
             <RouteTransition>{children}</RouteTransition>
           </div>
         </main>
