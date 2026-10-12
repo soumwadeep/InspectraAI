@@ -10,7 +10,9 @@ from app.models.ticket import (
     MaintenanceTicketEvent,
     ApprovalRequest,
     RepairVerification,
+    TICKET_TRANSITIONS,
     TicketStatusEnum,
+    allowed_ticket_transitions,
 )
 from app.schemas.ticket import (
     MaintenanceTicketCreate,
@@ -171,6 +173,22 @@ async def update_ticket(
 
     old_status = ticket.status
     update_data = data.model_dump(exclude_unset=True)
+
+    if "status" in update_data and update_data["status"] is not None:
+        requested = TicketStatusEnum(update_data["status"])
+        if requested != old_status:
+            permitted = TICKET_TRANSITIONS.get(old_status, frozenset())
+            if requested not in permitted:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Cannot move a ticket from {old_status.value} to "
+                        f"{requested.value}. Allowed next: "
+                        f"{allowed_ticket_transitions(old_status) or 'none — this state is final'}"
+                    ),
+                )
+            update_data["status"] = requested
+
     for key, value in update_data.items():
         setattr(ticket, key, value)
 

@@ -35,6 +35,35 @@ class TicketStatusEnum(str, enum.Enum):
     reopened = "reopened"
 
 
+# Where a status change may legally go. Enforced by PATCH /api/tickets/{id}:
+# without it any client could move a ticket straight from `draft` to `closed`,
+# which would mark work complete that was never approved, assigned, performed or
+# verified — and the closure would be indistinguishable from a real one in the
+# analytics.
+TICKET_TRANSITIONS: dict[TicketStatusEnum, frozenset[TicketStatusEnum]] = {
+    TicketStatusEnum.draft: frozenset({TicketStatusEnum.awaiting_approval}),
+    TicketStatusEnum.awaiting_approval: frozenset({
+        TicketStatusEnum.open,    # approved
+        TicketStatusEnum.draft,   # rejected back for editing
+    }),
+    TicketStatusEnum.open: frozenset({TicketStatusEnum.assigned}),
+    TicketStatusEnum.assigned: frozenset({TicketStatusEnum.in_progress}),
+    TicketStatusEnum.in_progress: frozenset({TicketStatusEnum.awaiting_verification}),
+    TicketStatusEnum.awaiting_verification: frozenset({
+        TicketStatusEnum.closed,   # verification passed
+        TicketStatusEnum.reopened,  # verification failed
+    }),
+    TicketStatusEnum.reopened: frozenset({TicketStatusEnum.in_progress}),
+    # A closed ticket is only ever left by a fresh finding, which opens a new
+    # ticket rather than resurrecting this one.
+    TicketStatusEnum.closed: frozenset(),
+}
+
+
+def allowed_ticket_transitions(status: TicketStatusEnum) -> list[str]:
+    return sorted(target.value for target in TICKET_TRANSITIONS.get(status, frozenset()))
+
+
 class MaintenanceTicket(Base):
     __tablename__ = "maintenance_tickets"
 
