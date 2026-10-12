@@ -1,0 +1,67 @@
+# Inspectra AI — full stack for local or single-host deployment.
+#
+# STATUS: authored, NOT verified. Docker and Docker Compose are not installed on
+# the machine this was written on, so no `docker compose up` has ever run against
+# it. Treat it as a specification of the intended topology, and expect to fix
+# something on first use.
+#
+# The important contract is the last two services:
+#   web -> BACKEND_ORIGIN=http://api:8000 -> /backend-api/* proxied by Next
+# The browser only ever talks to the web origin, so CORS is not involved and the
+# API needs no public port.
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: inspectra
+      # Never reuse this value outside local development. Override via
+      # POSTGRES_PASSWORD in a .env file; nothing here is a production secret.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme-local-only}
+      POSTGRES_DB: inspectra
+    volumes:
+      - inspectra-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inspectra -d inspectra"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      # The @ in a password must stay percent-encoded inside the URL.
+      DATABASE_URL: postgresql+psycopg2://inspectra:${POSTGRES_PASSWORD:-changeme-local-only}@db:5432/inspectra
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env before starting}
+      DEBUG: "false"
+      RUN_MIGRATIONS: "true"
+      # Left unset on purpose: with the web proxy in place the API is not
+      # addressed by browsers, so no CORS allowlist is required.
+      REDIS_URL: ""
+    volumes:
+      - inspectra-storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    environment:
+      # Runtime, not build-time: this is what stopped a baked
+      # http://localhost:8000 from reaching the client bundle.
+      BACKEND_ORIGIN: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  inspectra-db:
+  inspectra-storage:

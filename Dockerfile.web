@@ -1,0 +1,47 @@
+# Inspectra AI frontend (Next.js).
+#
+# Named Dockerfile.web rather than Dockerfile so it does not become the default
+# build target for the repository root, and so Coolify's auto-detected Nixpacks
+# frontend deployment keeps working untouched. Choose this file explicitly if you
+# want an image instead.
+#
+# Build context MUST be the repository root.
+#
+# STATUS: authored, NOT built. Docker is not installed on the machine this was
+# written on, so nothing here is verified. In particular `npm run build` needs
+# network access for `npm ci`, and the runtime stage assumes `next start` (not a
+# static export) because the app uses route handlers, middleware and the
+# /backend-api rewrite.
+
+FROM node:22-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM node:22-slim AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# BACKEND_ORIGIN is NOT a build argument on purpose: it is read by the Next server
+# at request time (see next.config.mjs rewrites). Baking it here is the mistake
+# that shipped `http://localhost:8000` inside the client bundle.
+RUN npm run build
+
+FROM node:22-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+# next start needs the lockfile-present dependency tree, not just prod deps,
+# because the build output references the installed Next version.
+COPY --from=build /app/package.json /app/package-lock.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/.next ./.next
+# No public/ COPY: the repository has no public directory, and a COPY of a
+# nonexistent path fails the build. Static assets live under app/ and
+# components/ and are served through the build output.
+COPY --from=build /app/next.config.mjs ./
+
+# Unprivileged: node:slim ships a `node` user.
+USER node
+EXPOSE 3000
+
+CMD ["npm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"]
