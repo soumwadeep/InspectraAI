@@ -226,6 +226,7 @@ interface BackendAgentRun {
   ended_at?: string | null;
   steps?: BackendAgentStep[];
   tool_calls?: BackendAgentToolCall[];
+  final_outcome?: Record<string, unknown> | null;
 }
 
 interface BackendAgentRunDetail {

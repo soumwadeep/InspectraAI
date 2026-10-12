@@ -105,7 +105,8 @@ export function RunForm({ isPending, error, lastPerPairMs, onRun }: RunFormProps
           <CardDescription>
             <code className="font-mono">POST /api/benchmarks/run</code> generates a labelled
             synthetic corpus from the seed and measures the real detection pipeline against it.
-            The same seed and pair count reproduce the same corpus.
+            The same seed and pair count regenerate the same corpus, against the
+            generator that exists in this build.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

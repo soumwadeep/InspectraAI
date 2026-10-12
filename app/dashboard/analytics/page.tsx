@@ -14,9 +14,11 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusDot } from "@/components/ui/status-dot";
 import { ExportButton } from "@/components/mission/export-button";
-import { CustomBarChart } from "@/components/charts/bar-chart";
+import { MeasuredBarChart } from "@/components/analytics/measured-bar-chart";
+import { MeasuredPieChart } from "@/components/analytics/measured-pie-chart";
+import { CapabilitiesPanel } from "@/components/analytics/capabilities-panel";
 import { CustomLineChart } from "@/components/charts/line-chart";
-import { CustomPieChart } from "@/components/charts/pie-chart";
+import { chartPalette } from "@/components/charts/chart-theme";
 import {
   Activity,
   AlertTriangle,
@@ -34,7 +36,7 @@ import {
   useInspections,
 } from "@/lib/hooks";
 import { ApiError } from "@/lib/api";
-import type { AgentRun, BadgeVariant, FindingStatus, Inspection } from "@/lib/types";
+import type { AgentRun, BadgeVariant, FindingStatus } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import { entry, stagger } from "@/lib/motion/presets";
 
@@ -49,12 +51,16 @@ const TREND_WINDOW_DAYS = 30;
 const BACKEND_START_COMMAND = "python3 -m uvicorn app.main:app --port 8000";
 
 /**
- * Detection quality is deliberately absent from this page. Precision, recall and
- * false-positive rate need labelled ground truth (`calculate_precision_recall`
- * in `backend/app/vision/metrics.py` takes `GroundTruthBox` values), and the only
- * benchmark that exists — `POST /api/benchmarks/run` — records smoke-test flags
- * such as `{ "detection_test": "passed" }` rather than measurements. Showing a
- * quality percentage here would be an invented number, so there is none.
+ * Detection quality is deliberately absent from this page. `POST /api/benchmarks/run`
+ * now performs real measurements, but only over a labelled *synthetic* corpus —
+ * those figures live on the Benchmarks page with their scope stated. Nothing on
+ * this page presents a quality percentage, because none is derived from real
+ * plant imagery.
+ *
+ * Chart note: bar and pie animations here go through `components/analytics/`
+ * wrappers that gate recharts `isAnimationActive` on `useReducedMotion()` — the
+ * pattern `components/charts/line-chart.tsx` already follows, since
+ * `MotionConfig reducedMotion="user"` does not reach recharts.
  */
 
 /** Buckets for the measured `duration_ms` of completed inspections. */
@@ -402,7 +408,8 @@ export default function AnalyticsPage() {
               </Badge>
               <Badge variant="outline">Counters: all time</Badge>
               <Badge variant="warning">
-                No detection-accuracy figures — no labelled benchmark dataset exists
+                No detection-accuracy figures here — benchmark metrics are measured on a synthetic
+                corpus only (Benchmarks page)
               </Badge>
             </div>
           </div>
@@ -574,10 +581,10 @@ export default function AnalyticsPage() {
               emptyHint="Running an inspection adds a point here; older inspections sit outside this window."
             >
               {(rows) => (
-                <CustomBarChart
+                <MeasuredBarChart
                   data={rows}
                   xKey="date"
-                  bars={[{ key: "count", name: "Inspections", color: "#38BDF8" }]}
+                  bars={[{ key: "count", name: "Inspections", color: chartPalette.primary }]}
                 />
               )}
             </Panel>
@@ -603,7 +610,7 @@ export default function AnalyticsPage() {
               emptyHint="Findings appear once an inspection has completed its analysis pass."
               skeletonClassName="h-[240px] w-full"
             >
-              {(rows) => <CustomPieChart data={rows} />}
+              {(rows) => <MeasuredPieChart data={rows} />}
             </Panel>
           </CardContent>
         </Card>
@@ -635,7 +642,7 @@ export default function AnalyticsPage() {
               emptyHint="Register equipment to populate this breakdown."
               skeletonClassName="h-[240px] w-full"
             >
-              {(rows) => <CustomPieChart data={rows} />}
+              {(rows) => <MeasuredPieChart data={rows} />}
             </Panel>
           </CardContent>
         </Card>
@@ -659,7 +666,7 @@ export default function AnalyticsPage() {
               emptyHint="Review a finding on the Findings page to record a decision."
               skeletonClassName="h-[240px] w-full"
             >
-              {(rows) => <CustomPieChart data={rows} />}
+              {(rows) => <MeasuredPieChart data={rows} />}
             </Panel>
           </CardContent>
         </Card>
@@ -694,10 +701,10 @@ export default function AnalyticsPage() {
               emptyHint="Duration is measured wall-clock time and is written when a run finishes."
             >
               {(rows) => (
-                <CustomBarChart
+                <MeasuredBarChart
                   data={rows}
                   xKey="range"
-                  bars={[{ key: "count", name: "Inspections", color: "#22D3EE" }]}
+                  bars={[{ key: "count", name: "Inspections", color: chartPalette.secondary }]}
                 />
               )}
             </Panel>
@@ -724,12 +731,12 @@ export default function AnalyticsPage() {
               emptyHint="Tool calls are written as each inspection's agent works through its budget."
             >
               {(rows) => (
-                <CustomBarChart
+                <MeasuredBarChart
                   data={rows}
                   xKey="tool"
                   bars={[
-                    { key: "invocations", name: "Invocations", color: "#38BDF8" },
-                    { key: "succeeded", name: "Succeeded", color: "#10B981" },
+                    { key: "invocations", name: "Invocations", color: chartPalette.primary },
+                    { key: "succeeded", name: "Succeeded", color: chartPalette.success },
                   ]}
                 />
               )}
@@ -768,7 +775,7 @@ export default function AnalyticsPage() {
                 <CustomLineChart
                   data={rows}
                   xKey="date"
-                  lines={[{ key: "count", name: "Findings raised", color: "#A78BFA" }]}
+                  lines={[{ key: "count", name: "Findings raised", color: chartPalette.accentReadable }]}
                 />
               )}
             </Panel>
@@ -829,6 +836,15 @@ export default function AnalyticsPage() {
             )}
           </CardContent>
         </Card>
+      </motion.div>
+
+      {/* Honest inventory of what the deployment claims it can do. */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.65 }}
+      >
+        <CapabilitiesPanel />
       </motion.div>
 
       {/* Real record lists the overview payload already returns. */}

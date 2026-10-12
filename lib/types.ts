@@ -203,6 +203,14 @@ export interface AgentRun {
   budgetUsed: number;
   finalAction?: string;
   toolCount: number;
+  /**
+   * What the planner recorded when the run stopped: planner id, final state,
+   * end_reached, alignment attempts, findings created, timeout, awaiting query,
+   * recommendations and any video sampling summary. Absent until the detail
+   * adapter forwards it, in which case the UI says "not returned" rather than
+   * guessing.
+   */
+  finalOutcome?: Record<string, unknown> | null;
 }
 
 export interface BenchmarkRun {
