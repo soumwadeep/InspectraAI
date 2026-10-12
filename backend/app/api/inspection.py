@@ -12,6 +12,7 @@ from app.core.storage import MAX_FILE_SIZE_BYTES, StorageService
 from app.models.equipment import Equipment
 from app.models.inspection import (
     Inspection,
+    InspectionFrame,
     InspectionInput,
     InspectionStatusEnum,
 )
@@ -293,8 +294,19 @@ async def get_input_preview(
     """Get a thumbnail preview of an inspection input image."""
     inp = db.query(InspectionInput).filter(
         InspectionInput.id == input_id,
+        # Scoped through the inspection's organization. The lookup used to be by
+        # `input_id` alone, so any authenticated caller could enumerate another
+        # tenant's uploads by guessing an inspection id and an input id.
+        InspectionInput.inspection_id == inspection_id,
     ).first()
     if not inp:
+        raise HTTPException(status_code=404, detail="Input not found")
+
+    owned = db.query(Inspection.id).filter(
+        Inspection.id == inspection_id,
+        Inspection.organization_id == org_id,
+    ).first()
+    if not owned:
         raise HTTPException(status_code=404, detail="Input not found")
 
     img_bytes = StorageService.read_image_as_bytes(inp.storage_path)
@@ -315,3 +327,92 @@ async def get_input_preview(
         return StreamingResponse(buffer, media_type="image/png")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _org_scoped_inspection(db: Session, inspection_id: str, org_id: str) -> Inspection:
+    inspection = db.query(Inspection).filter(
+        Inspection.id == inspection_id,
+        Inspection.organization_id == org_id,
+    ).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    return inspection
+
+
+@router.get("/{inspection_id}/frames", response_model=dict)
+async def list_inspection_frames(
+    inspection_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    org_id: str = Depends(get_current_organization_id),
+):
+    """List the frames sampled from a video input, with their measurements.
+
+    `inspection_frames` was write-only: the seeder and the video path stored rows
+    and per-frame statistics, but nothing could read them back, so the temporal
+    view had no data source.
+    """
+    inspection = _org_scoped_inspection(db, inspection_id, org_id)
+
+    frames = (
+        db.query(InspectionFrame)
+        .filter(InspectionFrame.inspection_id == inspection.id)
+        .order_by(InspectionFrame.frame_index.asc())
+        .all()
+    )
+
+    # Per-frame measurements live on the run's context snapshot, keyed by index.
+    samples_by_index: dict[int, dict] = {}
+    video_sampling: dict = {}
+    if inspection.agent_run_id:
+        from app.models.agent import AgentRun
+
+        run = db.get(AgentRun, inspection.agent_run_id)
+        snapshot = (run.context_json or {}) if run else {}
+        for sample in snapshot.get("temporal_samples") or []:
+            if isinstance(sample, dict) and "frame_index" in sample:
+                samples_by_index[int(sample["frame_index"])] = sample
+        video_sampling = snapshot.get("video_sampling") or {}
+
+    return {
+        "frames": [
+            {
+                "id": frame.id,
+                "frame_index": frame.frame_index,
+                "timestamp_ms": frame.timestamp_ms,
+                "storage_path": frame.storage_path,
+                "blur_score": samples_by_index.get(frame.frame_index, {}).get("blur_score"),
+                "mean_abs_diff": samples_by_index.get(frame.frame_index, {}).get("mean_abs_diff"),
+                "ssim_score": samples_by_index.get(frame.frame_index, {}).get("ssim_score"),
+            }
+            for frame in frames
+        ],
+        "selected_frame_index": video_sampling.get("selected_frame_index"),
+        "selection_reason": video_sampling.get("selection_reason"),
+        "count": len(frames),
+    }
+
+
+@router.get("/{inspection_id}/frames/{frame_id}/image")
+async def get_frame_image(
+    inspection_id: str,
+    frame_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    org_id: str = Depends(get_current_organization_id),
+):
+    """Serve one sampled frame as an image."""
+    from fastapi.responses import FileResponse
+
+    inspection = _org_scoped_inspection(db, inspection_id, org_id)
+    frame = db.query(InspectionFrame).filter(
+        InspectionFrame.id == frame_id,
+        InspectionFrame.inspection_id == inspection.id,
+    ).first()
+    if not frame:
+        raise HTTPException(status_code=404, detail="Frame not found")
+
+    path = StorageService.get_image_path(frame.storage_path)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Frame file not found on disk")
+    return FileResponse(str(path), media_type="image/png")

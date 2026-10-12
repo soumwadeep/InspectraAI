@@ -39,19 +39,49 @@ async def list_agent_runs(
         .all()
     )
 
+    run_ids = [run.id for run in runs]
+    if not run_ids:
+        return []
+
+    # Batched loads. The original loop issued four queries per run — inspection,
+    # steps, tool calls and equipment — so a 50-run page cost 200 round trips.
+    inspections_by_run = {
+        inspection.agent_run_id: inspection
+        for inspection in db.query(Inspection).filter(
+            Inspection.agent_run_id.in_(run_ids)
+        )
+    }
+    steps_by_run: dict[str, list] = {}
+    for step in db.query(AgentStep).filter(AgentStep.run_id.in_(run_ids)).order_by(
+        AgentStep.step_number.asc()
+    ):
+        steps_by_run.setdefault(step.run_id, []).append(step)
+    calls_by_run: dict[str, list] = {}
+    for call in db.query(AgentToolCall).filter(AgentToolCall.run_id.in_(run_ids)):
+        calls_by_run.setdefault(call.run_id, []).append(call)
+
+    equipment_ids = {
+        inspection.equipment_id
+        for inspection in inspections_by_run.values()
+        if inspection
+    }
+    from app.models.equipment import Equipment
+
+    names_by_equipment = {
+        equipment.id: equipment.name
+        for equipment in db.query(Equipment).filter(Equipment.id.in_(equipment_ids))
+    } if equipment_ids else {}
+
     result = []
     for run in runs:
-        inspection = db.query(Inspection).filter(Inspection.agent_run_id == run.id).first()
-        steps = db.query(AgentStep).filter(AgentStep.run_id == run.id).all()
-        tool_calls = db.query(AgentToolCall).filter(AgentToolCall.run_id == run.id).all()
-
-        # Get equipment
-        eq_name = "Unknown"
-        if inspection:
-            from app.models.equipment import Equipment
-            eq = db.query(Equipment).filter(Equipment.id == inspection.equipment_id).first()
-            if eq:
-                eq_name = eq.name
+        inspection = inspections_by_run.get(run.id)
+        steps = steps_by_run.get(run.id, [])
+        tool_calls = calls_by_run.get(run.id, [])
+        eq_name = (
+            names_by_equipment.get(inspection.equipment_id, "Unknown")
+            if inspection
+            else "Unknown"
+        )
 
         result.append({
             "id": run.id,

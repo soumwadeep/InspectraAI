@@ -77,11 +77,30 @@ class StorageService:
         return str(dest)
 
     @staticmethod
+    def resolve_within_storage(relative_path: str) -> Optional[Path]:
+        """Resolve a stored path and prove it stays inside the storage root.
+
+        `UPLOAD_DIR.parent / path` with an untrusted `path` is a textbook path
+        traversal: a stored value of `../../etc/passwd` resolves outside the tree,
+        and every file endpoint below would then serve it. Stored paths come from
+        the database, but the database is written from user-supplied filenames, so
+        containment is checked here rather than assumed upstream.
+        """
+        if not relative_path:
+            return None
+
+        root = UPLOAD_DIR.parent.resolve()
+        candidate = (root / relative_path).resolve()
+        if root not in candidate.parents and candidate != root:
+            return None
+        return candidate
+
+    @staticmethod
     def get_image_path(relative_path: str) -> Optional[Path]:
         """Get the full path for a stored image."""
-        full = UPLOAD_DIR.parent / relative_path
-        if full.exists():
-            return full
+        resolved = StorageService.resolve_within_storage(relative_path)
+        if resolved is not None and resolved.exists():
+            return resolved
         return None
 
     @staticmethod
@@ -99,11 +118,14 @@ class StorageService:
 
     @staticmethod
     def read_image_as_bytes(path: str) -> Optional[bytes]:
-        """Read a stored image file and return its raw bytes."""
-        full = UPLOAD_DIR.parent / path
-        if full.exists():
+        """Read a stored image file and return its raw bytes.
+
+        The old version also retried under `uploads/evidence/`, which turned an
+        empty path into a read of the evidence *directory* itself
+        (IsADirectoryError). Every stored path is already root-relative, so that
+        fallback had nothing to fix and only added a failure mode.
+        """
+        full = StorageService.resolve_within_storage(path)
+        if full is not None and full.is_file():
             return full.read_bytes()
-        # Also check evidence dir
-        if EVIDENCE_DIR.joinpath(path).exists():
-            return EVIDENCE_DIR.joinpath(path).read_bytes()
         return None
