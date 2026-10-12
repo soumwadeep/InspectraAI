@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  X,
 } from "@/components/icons";
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -40,20 +41,44 @@ const navItems = [
   { name: "Settings", icon: <Settings className="h-5 w-5" />, href: "/dashboard/settings" },
 ];
 
-export const Sidebar = () => {
+export const Sidebar = ({
+  mobileOpen,
+  onClose,
+}: {
+  mobileOpen: boolean;
+  onClose: () => void;
+}) => {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
 
   return (
-    <aside
-      className={cn(
-        "relative flex h-screen flex-col overflow-y-auto transition-all duration-300",
-        collapsed ? "w-16" : "w-64",
-        "border-r border-border bg-surface/70 backdrop-blur-xl",
-      )}
-    >
+    <>
+      {/* Off-canvas below lg. The sidebar used to be a static w-64 column at every
+          width, which left ~119px of content on a 375px screen — headings stacked
+          into each other and action buttons fell off the right edge. */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            aria-hidden
+            className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+        )}
+      </AnimatePresence>
+
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex h-screen w-72 flex-col overflow-y-auto border-r border-border bg-surface/70 backdrop-blur-xl transition-transform duration-300 ease-out",
+          "lg:static lg:z-auto lg:w-64 lg:translate-x-0 lg:transition-all",
+          mobileOpen ? "translate-x-0" : "-translate-x-full",
+          collapsed && "lg:w-16",
+        )}
+      >
       <div className="flex h-16 items-center justify-between px-4">
         {!collapsed && (
           <motion.div
@@ -98,7 +123,8 @@ export const Sidebar = () => {
         )}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="rounded-lg p-1.5 text-secondary-text hover:bg-surface-elevated hover:text-primary"
+          className="hidden rounded-lg p-1.5 text-secondary-text hover:bg-surface-elevated hover:text-primary lg:block"
+          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -106,13 +132,20 @@ export const Sidebar = () => {
             <ChevronLeft className="h-4 w-4" />
           )}
         </button>
+        <button
+          onClick={onClose}
+          className="rounded-lg p-1.5 text-secondary-text hover:bg-surface-elevated hover:text-primary lg:hidden"
+          aria-label="Close navigation"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
       <nav className="flex-1 space-y-1 px-2 py-4">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           return (
-            <Link key={item.name} href={item.href}>
+            <Link key={item.name} href={item.href} onClick={onClose}>
               <motion.div
                 className={cn(
                   "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
@@ -196,7 +229,10 @@ export const Sidebar = () => {
         </button>
         <button
           type="button"
-          onClick={logout}
+          onClick={() => {
+            onClose();
+            logout();
+          }}
           className={cn(
             "mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-secondary-text hover:bg-surface-elevated hover:text-critical",
             collapsed && "justify-center",
@@ -207,6 +243,7 @@ export const Sidebar = () => {
           {!collapsed && <span>Logout</span>}
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 };

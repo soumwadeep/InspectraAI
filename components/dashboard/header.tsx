@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell } from "lucide-react";
+import { Bell, Menu } from "@/components/icons";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -29,7 +29,7 @@ const pageTitles: Record<string, string> = {
  * the badge was the literal `3`, and typing in the search box did nothing.
  * Global search returns with the CommandHeader rewrite, wired to a real query.
  */
-export const Header = () => {
+export const Header = ({ onOpenNav }: { onOpenNav: () => void }) => {
   const pathname = usePathname();
   const title = pageTitles[pathname] || "Inspectra AI";
   const { user } = useAuth();
@@ -39,14 +39,24 @@ export const Header = () => {
 
   return (
     <motion.header
-      className="glass sticky top-0 z-10 flex h-16 items-center justify-between border-b px-6"
+      className="glass sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b px-4 sm:px-6"
       initial={{ y: -60 }}
       animate={{ y: 0 }}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
     >
-      <div className="flex items-center gap-4">
-        <h1 className="text-title font-bold text-primary-text">{title}</h1>
-        <nav className="hidden items-center space-x-2 text-sm text-secondary-text md:flex">
+      <div className="flex min-w-0 items-center gap-3">
+        {/* The sidebar is off-canvas below lg, so this is the only way to reach
+            navigation on a phone. */}
+        <button
+          type="button"
+          onClick={onOpenNav}
+          className="shrink-0 rounded-lg p-2 text-secondary-text hover:bg-surface-elevated hover:text-primary lg:hidden"
+          aria-label="Open navigation"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <h1 className="truncate text-title font-bold text-primary-text">{title}</h1>
+        <nav className="hidden shrink-0 items-center space-x-2 text-sm text-secondary-text xl:flex">
           <Link href="/dashboard" className="transition-colors hover:text-primary">
             Home
           </Link>
@@ -55,7 +65,7 @@ export const Header = () => {
         </nav>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <Link
           href="/dashboard/findings"
           className="relative rounded-lg p-2 text-secondary-text transition-colors hover:bg-surface-elevated hover:text-primary"
@@ -73,12 +83,12 @@ export const Header = () => {
           )}
         </Link>
 
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface/50 px-3 py-1.5">
-          <div className="text-right">
-            <p className="text-xs font-medium text-primary-text">
+        <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface/50 px-2 py-1.5 sm:px-3">
+          <div className="min-w-0 text-right">
+            <p className="truncate text-xs font-medium text-primary-text">
               {user?.name ?? "Not signed in"}
             </p>
-            <p className="text-[10px] uppercase tracking-wide text-secondary-text">
+            <p className="truncate text-[10px] uppercase tracking-wide text-secondary-text">
               {user?.role ?? "guest"}
             </p>
           </div>
