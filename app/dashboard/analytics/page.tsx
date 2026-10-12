@@ -185,8 +185,9 @@ function ApiFailure({
                 {BACKEND_START_COMMAND}
               </pre>
               <p className="text-xs text-secondary-text">
-                The browser calls the base URL in <code className="font-mono">NEXT_PUBLIC_API_URL</code>{" "}
-                (default <code className="font-mono">http://localhost:8000</code>).
+                The browser calls <code className="font-mono">/backend-api</code> on this same
+                origin; the Next.js server forwards it to{" "}
+                <code className="font-mono">BACKEND_ORIGIN</code>.
               </p>
             </div>
           )}

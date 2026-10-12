@@ -600,8 +600,8 @@ export default function LiveInspectionPage() {
               <p className="flex items-start gap-2">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
-                  Uploads go to <code className="font-mono">NEXT_PUBLIC_API_URL</code> (defaults
-                  to <code className="font-mono">http://localhost:8000</code>). Camera access
+                  Uploads go to <code className="font-mono">/backend-api</code> on this origin and
+                  are proxied to <code className="font-mono">BACKEND_ORIGIN</code>. Camera access
                   needs a secure context: HTTPS or localhost.
                 </span>
               </p>

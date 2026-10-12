@@ -50,13 +50,22 @@ cd backend && python3 -m scripts.seed_demo_data
 It prints one-time generated passwords, stores no credential in the repo, refuses
 to touch an existing slug, and never deletes or overwrites anything.
 
-⚠️ **Use `localhost`, not `127.0.0.1`.** The API allowlists `http://localhost:3000`
-— the `cors_origins` default in `backend/app/config.py`, overridable with a
-comma-separated `CORS_ORIGINS` env var. Browsers treat `http://127.0.0.1:3000` as
-a *different* origin, so requests get no `access-control-allow-origin` back and
-the login form reports *"Could not reach the API"* while the API is perfectly
-healthy. Set `CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000` if you
-want both spellings to work.
+The browser talks to the Next.js origin only. `lib/api.ts` uses a relative base
+(`/backend-api`) and `next.config.mjs` proxies that to `BACKEND_ORIGIN`, which is
+read **at request time**. Nothing about the API host is baked into the client
+bundle, so the same build works on localhost, on a preview domain and in
+production, and the browser never makes a cross-origin call — CORS is not a
+deployment requirement.
+
+To point the app at an API somewhere other than `http://localhost:8000`:
+
+```bash
+BACKEND_ORIGIN=http://your-backend-host:8000   # runtime env for the Next server
+```
+
+`CORS_ORIGINS` on the backend still matters if you set `NEXT_PUBLIC_API_URL` to an
+absolute origin (which bypasses the proxy) or if other clients call the API
+directly.
 
 Confirm the stack is alive:
 

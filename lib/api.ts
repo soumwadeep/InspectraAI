@@ -10,7 +10,18 @@ import {
   BenchmarkRun,
 } from "./types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Same-origin by default: requests go to `/backend-api/*` and the Next.js server
+// proxies them to the API (see `next.config.mjs`). `NEXT_PUBLIC_*` is inlined into
+// the bundle at *build* time, so a baked absolute host survives a domain change and
+// the deployed app ends up telling every visitor's browser to call their own
+// machine on port 8000. A relative base plus a runtime `BACKEND_ORIGIN` removes
+// that whole failure mode — and the browser never makes a cross-origin call, so
+// CORS stops being a deployment requirement.
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "/backend-api").replace(/\/$/, "");
+
+/** Exported so the settings/analytics pages report the real base instead of
+ *  re-deriving it and drifting from this file. */
+export const API_BASE = API_URL;
 
 // ---------- Token storage ----------
 

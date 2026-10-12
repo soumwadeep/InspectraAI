@@ -20,16 +20,17 @@ import {
   Cloud,
 } from "@/components/icons";
 import { useAuth } from "@/lib/auth-context";
+import { API_BASE } from "@/lib/api";
 import { useSystemHealth } from "@/lib/hooks";
 import { useTheme } from "@/lib/theme-provider";
 import { formatDate } from "@/lib/utils";
 import { entry, stagger } from "@/lib/motion/presets";
 
 /**
- * Mirrors the fallback in `lib/api.ts`. `lib/api.ts` does not export its base
- * URL, so this is the same expression rather than a second source of truth.
+ * The single source of truth in `lib/api.ts`, so this panel cannot drift from the
+ * client it is describing.
  */
-const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_ORIGIN = API_BASE;
 
 /** Copied from the error message in `components/mission/system-health-panel.tsx`. */
 const BACKEND_START_COMMAND = "python3 -m uvicorn app.main:app --port 8000";
@@ -247,12 +248,14 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Row label="NEXT_PUBLIC_API_URL" value={API_ORIGIN} />
+              <Row label="API base" value={API_ORIGIN} />
               <p className="text-xs text-secondary-text">
-                Set in <code className="font-mono">.env.local</code>; the client falls back to{" "}
-                <code className="font-mono">http://localhost:8000</code> when it is unset.
-                Requests are unproxied <code className="font-mono">fetch</code> calls, so a
-                failure here is the same failure the health card above reports.
+                A relative base such as{" "}
+                <code className="font-mono">/backend-api</code> is proxied to the API by the
+                Next.js server using <code className="font-mono">BACKEND_ORIGIN</code>, which is
+                read at runtime — so the browser makes no cross-origin call and CORS is not a
+                deployment requirement. An absolute base here is fetched directly by the browser
+                and must appear in the API&apos;s <code className="font-mono">CORS_ORIGINS</code>.
               </p>
             </CardContent>
           </Card>
