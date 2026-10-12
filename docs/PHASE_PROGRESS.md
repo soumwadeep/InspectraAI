@@ -9,8 +9,8 @@ the check could not run here; it never means "probably fine".
 | 1 | Build green; remove every fabricated value | **VERIFIED** | `tsc` 0 errors, `eslint` 0 errors, `next build` 18/18 pages, full inspection driven in browser with 0 console errors |
 | 2 | Vision Command OS design tokens + motion system | **VERIFIED** | browser computed styles confirm spec palette, Space Grotesk, grid/reticle layers, and dark↔light differing in colour and effect strength; `next build` green with unchanged 102 kB shared JS |
 | 3 | Real OpenCV depth + genuine agentic loop | **VERIFIED (local, SQLite)** | five distinct agent traces driven over HTTP (defect, clean, poor-quality, weak-alignment, human-override) plus pause→resume; 14 read endpoints 200; 6 evidence PNGs fetched back and byte-checked; real video decode (48-frame fixture, 12 frames sampled, sharpest selected by measured Laplacian variance); benchmark endpoint now computes precision 0.9 / recall 1.0 / F1 0.9474 / mean IoU 0.641 on a labelled 8-pair corpus instead of storing `"passed"`. See `docs/phases/PHASE_03_REPORT.md` |
-| 4 | Seed real data; build console + VisionViewport | **IN PROGRESS** | Seeding **VERIFIED**: 18 inspections driven through the real pipeline, findings matching injected ground truth per category, 0 false regions on all clean captures. Two real bugs found *by* seeding (alignment never wrote its `_mask.png`; warp-seam margin) and fixed. Frame + capability APIs **VERIFIED**. Console pages in flight |
-| 5 | Verification harness, containers, deploy docs, security | **PARTIALLY VERIFIED** | 50-test pytest suite passes; `verify-local.sh` green; path traversal, tenant isolation and ticket transitions **VERIFIED by test**. Dockerfiles and compose authored but **BLOCKED** — no Docker on this machine, so never built |
+| 4 | Seed real data; build console + VisionViewport | **VERIFIED (local, SQLite + browser DOM)** | 18 inspections driven through the *same service the run endpoint calls*; findings match injected ground truth per category, 0 false regions on every clean capture. Benchmarks reconciled (the 0.4857/0.3778 vs 0.886/0.689 contradiction was the IoU threshold, both re-measured on one corpus). Agent/analytics/benchmarks/reports pages rendered in a live browser session with 0 console errors and evidence blobs byte-checked (552 KB / 3.6 KB PNG). 54-test pytest suite. Four real defects found and fixed: untracked modules behind a committed build, `final_outcome` dropped by the adapter, seeder not shifting tool-call timestamps, and a contentless pause question after a human override. See `docs/phases/PHASE_04_REPORT.md` |
+| 5 | Verification harness, containers, deploy docs, security | **PARTIALLY VERIFIED** | 54-test pytest suite passes; `verify-local.sh` green including a **clean-tree `next build`** (extracts `git archive HEAD` so an unstaged import cannot pass); path traversal, tenant isolation and ticket transitions **VERIFIED by test**. Dockerfiles and compose authored but **BLOCKED** — no Docker on this machine, so never built |
 
 > **Benchmark numbers were revised downward in Phase 4.** Phase 3 recorded
 > precision 0.90 / recall 1.00 / F1 0.9474 / mean IoU 0.641 over 8 pairs. That
@@ -42,6 +42,24 @@ the check could not run here; it never means "probably fine".
 - Deployment fix: the client no longer bakes an absolute API host. It uses a
   relative `/backend-api` base that Next proxies from `BACKEND_ORIGIN` at request
   time, so CORS is not a deployment requirement and one build works everywhere.
+- Benchmark detail/list shape unified on `BenchmarkRunRead`, and the run form's
+  IoU default moved to 0.3 so a first run reproduces the published baseline
+  instead of appearing to refute it. Measured on one corpus: 0.3 → 0.8857/0.6889,
+  0.5 → 0.4857/0.3778.
+- `agent_runs.final_outcome` reaches the browser. `adaptAgentRunDetail` declared
+  it but never copied it onto `AgentRun`; the list route did not return it at all.
+- `AgentStep["action"]` retyped from a `started/completed/failed` union to the
+  open vocabulary the column actually stores; the `String()` cast helper the UI
+  used to work around the lie is deleted.
+- The seeder back-dated runs, steps and observations but **not**
+  `agent_tool_calls` timestamps, so the console showed a run starting 11 Oct with
+  tool calls on 12 Oct. Its docstring claimed every timestamp moved. All shift now.
+- A paused run reached by *human override* asked "Human input required." while its
+  own row held `inlier_ratio=0.0645` and the reason string. The alignment branch
+  excluded the `poor_quality` status; it no longer does, and the question now
+  quotes the measured reason.
+- `scripts/probe_pause_resume.py` drives quality-pause → resume → second pause
+  through the real HTTP API, so the human-in-the-loop path is reproducible.
 
 ## Known BLOCKED items (machine has no Docker, Postgres, Redis or AWS access)
 
