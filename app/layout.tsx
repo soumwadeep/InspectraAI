@@ -3,6 +3,7 @@ import { GeistMono } from "geist/font/mono";
 import "@fontsource-variable/space-grotesk";
 import "@fontsource-variable/jetbrains-mono";
 import "@/app/globals.css";
+import type { Viewport } from "next";
 import { Providers } from "./providers";
 
 export const metadata = {
@@ -12,7 +13,16 @@ export const metadata = {
   },
   description:
     "Inspectra AI: See the problem. Investigate the cause. Act before failure. Agentic computer vision for industrial equipment inspection.",
-  icons: [{ rel: "icon", url: "/favicon.svg" }],
+  // Icons come from the app/icon.svg, app/icon.png and app/apple-icon.png file
+  // conventions, which Next links automatically. This used to declare
+  // { rel: "icon", url: "/favicon.svg" } — a file that was never in the repo
+  // (there is no public/ directory), so every tab requested it and got a 404.
+};
+
+export const viewport: Viewport = {
+  // Matches --color-bg-void so the mobile browser chrome sits flush with the
+  // dark theme instead of ringing the app with white.
+  themeColor: "#050914",
 };
 
 export default function RootLayout({
