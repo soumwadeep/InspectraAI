@@ -4,14 +4,18 @@
 # Directory = "/", Dockerfile Location = "/backend/Dockerfile"), because the COPY
 # paths below are prefixed with backend/.
 #
-# STATUS: authored, NOT built. Docker is not installed on the machine this was
-# written on, so treat it as unverified until `docker build` says otherwise. The
-# previous version of this file could not build at all: it ran
-# `chown -R appuser:appuser /app /workspace` on a /workspace directory that was
-# never created, and it copied only `app/`, so `alembic/`, `alembic.ini` and
-# `scripts/` were absent from the image and no migration could ever run in the
-# container — the app would boot and then 500 on every query against an empty
-# schema.
+# STATUS: builds and boots. Verified on the deployment host — the image built,
+# `alembic upgrade head` connected via PostgresqlImpl, and uvicorn reached
+# "Application startup complete". The first version of this file could not build
+# at all: it ran `chown -R appuser:appuser /app /workspace` on a /workspace
+# directory that was never created, and it copied only `app/`, so `alembic/`,
+# `alembic.ini` and `scripts/` were absent from the image and no migration could
+# ever run in the container — the app would boot and then 500 on every query
+# against an empty schema.
+#
+# Still unverified by the author: this file has never been built locally, because
+# Docker is not installed on the development machine. Every claim above comes from
+# the deployment host's build log.
 
 FROM python:3.13-slim
 
@@ -50,9 +54,15 @@ RUN chmod +x /entrypoint.sh
 
 USER appuser
 
+# Coolify injects PORT and expects the app to bind to it — the deployed container
+# came up on 3010, not 8000. EXPOSE is only documentation here; the real port comes
+# from the environment at run time.
 EXPOSE 8000
 
+# The probe must read the same variable the entrypoint binds to. Hardcoding 8000
+# made curl fail with "Failed to connect to localhost port 8000" against a
+# perfectly healthy app on $PORT, so Coolify rolled back a working deployment.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
-    CMD curl -fsS http://localhost:8000/health || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT:-8000}/health" || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

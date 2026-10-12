@@ -45,14 +45,17 @@ the check could not run here; it never means "probably fine".
 
 ## Known BLOCKED items (machine has no Docker, Postgres, Redis or AWS access)
 
-- Postgres migration path: the baseline is generated and applied against SQLite
-  only. The native-enum labels and the `inspections` ↔ `agent_runs` foreign-key
-  cycle are untested on Postgres.
-- Docker image builds: `backend/Dockerfile` was rewritten (it chowned a
-  `/workspace` directory that nothing created, and omitted `alembic/` so no
-  migration could run in the container) and `Dockerfile.web` was added — but
-  **neither has ever been built**, because Docker is not installed here. Treat
-  both as unverified specifications, not working artifacts.
+- Postgres migration path: **partially cleared.** `alembic upgrade head` has now
+  run against the deployed Postgres 18 instance (`Context impl PostgresqlImpl`,
+  `Will assume transactional DDL`, app reached "Application startup complete").
+  What remains untested is the *data* behaviour: the `inspections` ↔ `agent_runs`
+  foreign-key cycle and enum-value round-tripping have only ever been exercised
+  against SQLite, and no inspection has yet been run on Postgres.
+- `backend/Dockerfile` was rewritten (the old one chowned a `/workspace` directory
+  that nothing created, and omitted `alembic/` so no migration could run in the
+  container) and **has now built and booted on the deployment host**.
+  `Dockerfile.web` remains **never built** — the frontend still deploys via
+  Coolify's Nixpacks detection, so that image is an unverified specification.
 - `compose.yaml` — same status: authored, never brought up.
 - AWS vision worker, S3 evidence storage, COOL benchmarks — no code, no
   credentials, no ARM host.

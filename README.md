@@ -291,9 +291,12 @@ cd backend && python3 -m alembic upgrade head
 
 - **Postgres.** Everything above ran on SQLite. The native-enum labels and the
   `inspections` ↔ `agent_runs` foreign-key cycle are untested on Postgres.
-- **Docker.** Not installed on this machine. `backend/Dockerfile` is written and
-  is known-broken (it chowns `/workspace`, a directory it never creates); it has
-  not been built, so it is not claimed to work.
+- **Docker.** Not installed on this machine, so nothing has been built *locally*.
+  The rewritten `backend/Dockerfile` **has** now built and booted on the
+  deployment host — the image compiled, `alembic upgrade head` connected over
+  PostgresqlImpl, and uvicorn reached "Application startup complete". The earlier
+  version could not build at all (it chowned a `/workspace` directory that nothing
+  created, and omitted `alembic/` from the image).
 - **AWS, S3 evidence storage, Bedrock/Rekognition, Graviton worker.** No code, no
   credentials, no ARM host.
 - **COOL.** The competition's deployment target. Not integrated and not claimed.
