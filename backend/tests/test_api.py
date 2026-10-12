@@ -223,3 +223,27 @@ class TestAuthEndpoints:
     def test_health_reports_the_real_schema_revision(self, client):
         body = client.get("/health").json()
         assert body["schema_revision"], "revision must come from Alembic, not a constant"
+
+
+class TestBenchmarkShapeConsistency:
+    def test_list_and_detail_return_the_same_fields(self, client):
+        """One resource, one shape. The detail route used to hand-build
+        `config`/`results` while the list returned `config_json`/`results_json`,
+        so the client adapter silently rendered every stored measurement empty."""
+        started = client.post(
+            "/api/benchmarks/run",
+            json={"name": "shape check", "description": "", "config": {"pairs": 2, "seed": 5}},
+        )
+        assert started.status_code == 200, started.text
+        run_id = started.json()["id"]
+
+        listed = client.get("/api/benchmarks").json()
+        row = next(item for item in listed if item["id"] == run_id)
+        detail = client.get(f"/api/benchmarks/{run_id}").json()
+
+        assert row.keys() == detail.keys(), (sorted(row), sorted(detail))
+        assert "results_json" in detail
+        assert detail["results_json"]["detection"]["true_positives"] >= 0
+        # The corpus metadata must survive, or the numbers are unattributable.
+        for key in ("pairs", "seed", "iou_threshold"):
+            assert key in detail["results_json"]["corpus"], key

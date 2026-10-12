@@ -65,14 +65,20 @@ async def run_benchmark(
     return run
 
 
-@router.get("/{run_id}", response_model=dict)
+@router.get("/{run_id}", response_model=BenchmarkRunRead)
 async def get_benchmark(
     run_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     org_id: str = Depends(get_current_organization_id),
 ):
-    """Get a specific benchmark run with full results."""
+    """Get a specific benchmark run with full results.
+
+    Returns the same shape as the list route. It previously hand-built a dict with
+    `config`/`results`, while `GET /api/benchmarks` returns `config_json`/
+    `results_json` via `BenchmarkRunRead` — one resource with two field spellings,
+    so the client adapter silently produced undefined for the detail view.
+    """
     run = db.query(BenchmarkRun).filter(
         BenchmarkRun.id == run_id,
         BenchmarkRun.organization_id == org_id,
@@ -80,12 +86,4 @@ async def get_benchmark(
     if not run:
         raise HTTPException(status_code=404, detail="Benchmark run not found")
 
-    return {
-        "id": run.id,
-        "name": run.name,
-        "description": run.description,
-        "config": run.config_json,
-        "results": run.results_json,
-        "duration_ms": run.duration_ms,
-        "created_at": run.created_at.isoformat(),
-    }
+    return run
