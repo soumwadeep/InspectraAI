@@ -1,32 +1,58 @@
-FROM python:3.13-slim AS base
+# Inspectra AI backend.
+#
+# Build context MUST be the repository root (Coolify: Build Context / Root
+# Directory = "/", Dockerfile Location = "/backend/Dockerfile"), because the COPY
+# paths below are prefixed with backend/.
+#
+# STATUS: authored, NOT built. Docker is not installed on the machine this was
+# written on, so treat it as unverified until `docker build` says otherwise. The
+# previous version of this file could not build at all: it ran
+# `chown -R appuser:appuser /app /workspace` on a /workspace directory that was
+# never created, and it copied only `app/`, so `alembic/`, `alembic.ini` and
+# `scripts/` were absent from the image and no migration could ever run in the
+# container — the app would boot and then 500 on every query against an empty
+# schema.
 
-# Install system dependencies for OpenCV headlessly
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    libgomp1 \
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# libglib2.0-0 and libgomp1 are what opencv-python-headless links against.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libglib2.0-0 \
+        libgomp1 \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --no-deps -r requirements.txt
+# Requirements first, so application edits reuse this layer.
+COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic ./alembic
 COPY backend/app ./app
+COPY backend/scripts ./scripts
 
-# Create storage directories
-RUN mkdir -p storage/uploads/evidence storage/uploads/inspections storage/uploads/reference
+# Uploads and derived evidence are written at runtime, so the unprivileged user
+# needs the whole tree owned by it — including storage/, which previously did not
+# exist yet when ownership was set.
+RUN useradd --create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/storage/uploads \
+    && chown -R appuser:appuser /app
 
-# Create non-root user
-RUN useradd -m appuser && chown -R appuser:appuser /app /workspace
+COPY backend/docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 USER appuser
 
 EXPOSE 8000
 
-# Run with Uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]
