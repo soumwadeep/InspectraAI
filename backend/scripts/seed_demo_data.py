@@ -15,6 +15,7 @@ nothing is deleted. Re-running is refused unless the slug is free.
 from __future__ import annotations
 
 import argparse
+import os
 import secrets
 import sys
 from datetime import datetime, timedelta
@@ -493,7 +494,8 @@ def _report(db, org, slug, passwords, users, tally) -> None:
     print(f"  video frames      {frames}")
     print(f"  avg measured run  {float(avg_ms or 0):.0f} ms")
     print(f"  failed runs       {tally['failed']}    paused runs: {tally['paused']}")
-    print("\nSign in at http://localhost:3000/login (passwords generated now, shown once):")
+    app_url = os.environ.get("PUBLIC_APP_URL", "http://localhost:3000").rstrip("/")
+    print(f"\nSign in at {app_url}/login (passwords generated now, shown once):")
     for role, user in users.items():
         print(f"  {user.email}  /  {passwords[role]}   ({role.value})")
     print("No credential is written to the repository.")
