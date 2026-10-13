@@ -751,8 +751,33 @@ export const api = {
       });
       return adaptEquipment(res);
     },
-    uploadReferenceImage: async (id: string, file: File): Promise<Record<string, unknown>> => {
-      const form = new FormData();
+    /**
+     * PATCH /api/equipment/{id}. The backend applies only the keys present in the
+     * body (`exclude_unset=True`), so callers pass a partial object and untouched
+     * columns stay untouched.
+     */
+    update: async (
+      id: string,
+      data: {
+        name?: string;
+        category?: string;
+        location?: string;
+        description?: string;
+        manufacturer?: string;
+        model?: string;
+        serial_number?: string;
+        installation_date?: string | null;
+        inspection_schedule?: string | null;
+        status?: string;
+      },
+    ): Promise<Equipment> => {
+      const res = await request<BackendEquipment>(`/api/equipment/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+      return adaptEquipment(res);
+    },
+    uploadReferenceImage: async (id: string, file: File): Promise<Record<string, unknown>> => {      const form = new FormData();
       form.append("file", file);
       return request<Record<string, unknown>>(`/api/equipment/${id}/reference-image`, {
         method: "POST",

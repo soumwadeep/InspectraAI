@@ -47,8 +47,10 @@ export function LanguageSwitcher({ className }: { className?: string }) {
   // work is worse than showing none.
   if (!available || !available.configured || available.targets.length === 0) return null;
 
+  // data-no-translate: the option labels are endonyms. Translating them defeats
+  // the control — you cannot find हिन्दी if the list has already renamed it.
   return (
-    <div className={cn("flex shrink-0 items-center gap-1.5", className)}>
+    <div data-no-translate className={cn("flex shrink-0 items-center gap-1.5", className)}>
       <Globe className="h-3.5 w-3.5 text-secondary-text" aria-hidden />
       <label htmlFor={id} className="sr-only">
         Interface language

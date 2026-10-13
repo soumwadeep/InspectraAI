@@ -126,9 +126,12 @@ const SKIP_SELECTOR = [
   "samp",
   "var",
   "textarea",
+  "select",
+  "option",
   "script",
   "style",
   "[data-no-translate]",
+  "[data-i18n-ignore]",
   "[aria-hidden='true']",
   ".telemetry",
 ].join(",");

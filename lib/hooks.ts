@@ -123,8 +123,13 @@ export function useUpdateTicket() {
     };
   }>({
     mutationFn: ({ ticket_id, data }) => api.tickets.update(ticket_id, data),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(["ticket", updated.id], updated);
+    onSuccess: (_updated, variables) => {
+      // PATCH returns a bare ticket row, while useTicketDetail caches the wrapped
+      // { ticket, events, approvals, verifications } document. Writing the bare
+      // row into that slot made the detail page read `raw.ticket` as undefined and
+      // announce "no ticket with this id was returned" immediately after a
+      // successful transition. Re-fetch instead, so the cache holds one shape.
+      queryClient.invalidateQueries({ queryKey: ["ticket", variables.ticket_id] });
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
     },
   });

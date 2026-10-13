@@ -26,6 +26,12 @@ const pageTitles: Record<string, string> = {
 /**
  * Command-style top bar.
  *
+ * Uses `glass-strong` (0.86) rather than the `glass` (0.72) the panels use: this
+ * is a sticky element that page content scrolls *under*, and at 0.72 a large
+ * gradient page title ghosts through it badly enough to read as overlapping
+ * text. Translucency is a good property for a surface you see content behind;
+ * it is the wrong one for a surface that must sit in front.
+ *
  * The search field and notification badge that used to live here were inert:
  * the badge was the literal `3`, and typing in the search box did nothing.
  * Global search returns with the CommandHeader rewrite, wired to a real query.
@@ -40,7 +46,7 @@ export const Header = ({ onOpenNav }: { onOpenNav: () => void }) => {
 
   return (
     <motion.header
-      className="glass sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b px-4 sm:px-6"
+      className="glass-strong sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b px-4 sm:px-6"
       initial={{ y: -60 }}
       animate={{ y: 0 }}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
